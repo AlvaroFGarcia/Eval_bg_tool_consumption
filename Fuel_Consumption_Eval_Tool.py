@@ -506,6 +506,13 @@ class SurfaceTableViewer(QWidget):
                     item.setForeground(QColor('black'))
                 
                 self.legend_table.setItem(0, i, item)
+    
+    def closeEvent(self, event):
+        """Handle window close event properly"""
+        global _active_viewers
+        if self in _active_viewers:
+            _active_viewers.remove(self)
+        event.accept()
 
 class AutocompleteCombobox(ttk.Combobox):
     """A Combobox with autocompletion support."""
@@ -941,14 +948,6 @@ def show_surface_table(surface_data, x_values, y_values, z_values, percentages=N
         app = QApplication(sys.argv)
     
     viewer = SurfaceTableViewer(surface_data, x_values, y_values, z_values, percentages, total_points_inside, total_points_all, comparison_percentages, comparison_name)
-    
-    # Add cleanup when viewer is closed
-    def on_viewer_closed():
-        global _active_viewers
-        if viewer in _active_viewers:
-            _active_viewers.remove(viewer)
-    
-    viewer.closeEvent = lambda event: (on_viewer_closed(), event.accept())
     
     # Keep reference to prevent garbage collection
     _active_viewers.append(viewer)

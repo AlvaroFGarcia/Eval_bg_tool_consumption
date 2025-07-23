@@ -68,6 +68,7 @@ class SurfaceTableViewer(QWidget):
         self.comparison_name = comparison_name
         self.show_comparison = comparison_percentages is not None
         self.show_percentage_diff = False
+        self.use_absolute_diff = False  # Toggle between percentage and absolute difference
         
         # Color settings
         self.min_color = QColor(255, 255, 255)  # White for minimum
@@ -106,11 +107,22 @@ class SurfaceTableViewer(QWidget):
         # Comparison controls (if comparison data is available)
         if self.show_comparison:
             comparison_group = QGroupBox("Comparison Mode")
-            comparison_layout = QHBoxLayout()
+            comparison_layout = QVBoxLayout()
             
-            self.show_diff_cb = QCheckBox(f"Show % Difference vs {self.comparison_name}")
+            # Main comparison toggle
+            comparison_row1 = QHBoxLayout()
+            self.show_diff_cb = QCheckBox(f"Show Difference vs {self.comparison_name}")
             self.show_diff_cb.stateChanged.connect(self.toggle_percentage_diff)
-            comparison_layout.addWidget(self.show_diff_cb)
+            comparison_row1.addWidget(self.show_diff_cb)
+            comparison_layout.addLayout(comparison_row1)
+            
+            # Difference type toggle (only visible when comparison is enabled)
+            comparison_row2 = QHBoxLayout()
+            self.diff_type_cb = QCheckBox("Use Absolute Difference (instead of %)")
+            self.diff_type_cb.stateChanged.connect(self.toggle_diff_type)
+            self.diff_type_cb.setEnabled(False)  # Initially disabled
+            comparison_row2.addWidget(self.diff_type_cb)
+            comparison_layout.addLayout(comparison_row2)
             
             comparison_group.setLayout(comparison_layout)
             stats_panel.addWidget(comparison_group)
@@ -326,8 +338,17 @@ class SurfaceTableViewer(QWidget):
         self.update_legend()
     
     def toggle_percentage_diff(self):
-        """Toggle between showing main data and percentage difference"""
+        """Toggle between showing main data and difference"""
         self.show_percentage_diff = self.show_diff_cb.isChecked()
+        # Enable/disable the difference type toggle based on comparison state
+        if hasattr(self, 'diff_type_cb'):
+            self.diff_type_cb.setEnabled(self.show_percentage_diff)
+        self.populate_table()
+        self.update_legend()
+    
+    def toggle_diff_type(self):
+        """Toggle between percentage and absolute difference"""
+        self.use_absolute_diff = self.diff_type_cb.isChecked()
         self.populate_table()
         self.update_legend()
     
@@ -396,24 +417,33 @@ class SurfaceTableViewer(QWidget):
         max_percentage = 0
         
         if self.show_comparison and self.show_percentage_diff:
-            # Show percentage difference
+            # Show difference (percentage or absolute)
             if self.percentages is not None and self.comparison_percentages is not None:
                 # Check if we're comparing surface table values (z_values) vs percentages
                 if np.array_equal(self.percentages, self.z_values):
-                    # We're comparing surface table values, calculate percentage difference
-                    # Percentage difference = ((main - comparison) / comparison) * 100
-                    with np.errstate(divide='ignore', invalid='ignore'):
-                        display_data = np.where(
-                            (self.comparison_percentages != 0) & ~np.isnan(self.comparison_percentages),
-                            ((self.percentages - self.comparison_percentages) / self.comparison_percentages) * 100,
-                            0
-                        )
-                    # For surface table percentage differences, use a reasonable range
+                    # We're comparing surface table values
+                    if self.use_absolute_diff:
+                        # Absolute difference = main - comparison
+                        display_data = self.percentages - self.comparison_percentages
+                    else:
+                        # Percentage difference = ((main - comparison) / comparison) * 100
+                        with np.errstate(divide='ignore', invalid='ignore'):
+                            display_data = np.where(
+                                (self.comparison_percentages != 0) & ~np.isnan(self.comparison_percentages),
+                                ((self.percentages - self.comparison_percentages) / self.comparison_percentages) * 100,
+                                0
+                            )
+                    # For surface table differences, use a reasonable range
                     max_abs_diff = np.nanmax(np.abs(display_data[np.isfinite(display_data)])) if np.any(np.isfinite(display_data)) else 10
                     max_percentage = max_abs_diff
                 else:
                     # Regular percentage-based comparison
-                    display_data = self.percentages - self.comparison_percentages
+                    if self.use_absolute_diff:
+                        # Absolute difference for percentages
+                        display_data = self.percentages - self.comparison_percentages
+                    else:
+                        # Percentage point difference (already in percentage units)
+                        display_data = self.percentages - self.comparison_percentages
                     # For difference, use symmetric range around 0
                     max_abs_diff = np.nanmax(np.abs(display_data)) if not np.all(np.isnan(display_data)) else 10
                     max_percentage = max_abs_diff
@@ -439,12 +469,18 @@ class SurfaceTableViewer(QWidget):
                     data_val = display_data[i, j]
                     if not np.isnan(data_val):
                         if self.show_comparison and self.show_percentage_diff:
-                            # Show difference with + or - sign
-                            text += f'\n{data_val:+.2f}%'
+                            # Show difference with + or - sign and appropriate unit
+                            if self.use_absolute_diff:
+                                text += f'\n{data_val:+.2f}'
+                            else:
+                                text += f'\n{data_val:+.2f}%'
                         else:
                             text += f'\n{data_val:.2f}%'
                     else:
-                        text += '\n0.00%'
+                        if self.show_comparison and self.show_percentage_diff and self.use_absolute_diff:
+                            text += '\n0.00'
+                        else:
+                            text += '\n0.00%'
                         data_val = 0
                 else:
                     data_val = 0
@@ -481,13 +517,18 @@ class SurfaceTableViewer(QWidget):
             if self.percentages is not None and self.comparison_percentages is not None:
                 # Check if we're comparing surface table values
                 if np.array_equal(self.percentages, self.z_values):
-                    # Calculate percentage differences for surface table comparison
-                    with np.errstate(divide='ignore', invalid='ignore'):
-                        display_data = np.where(
-                            (self.comparison_percentages != 0) & ~np.isnan(self.comparison_percentages),
-                            ((self.percentages - self.comparison_percentages) / self.comparison_percentages) * 100,
-                            0
-                        )
+                    # Calculate differences for surface table comparison
+                    if self.use_absolute_diff:
+                        # Absolute difference
+                        display_data = self.percentages - self.comparison_percentages
+                    else:
+                        # Percentage difference
+                        with np.errstate(divide='ignore', invalid='ignore'):
+                            display_data = np.where(
+                                (self.comparison_percentages != 0) & ~np.isnan(self.comparison_percentages),
+                                ((self.percentages - self.comparison_percentages) / self.comparison_percentages) * 100,
+                                0
+                            )
                     max_abs_diff = np.nanmax(np.abs(display_data[np.isfinite(display_data)])) if np.any(np.isfinite(display_data)) else 10.0
                 else:
                     # Regular percentage-based comparison
@@ -500,8 +541,11 @@ class SurfaceTableViewer(QWidget):
             for i in range(11):
                 diff_val = -max_abs_diff + (2 * max_abs_diff) * (i / 10.0)
                 
-                # Set header with difference value
-                header_item = QTableWidgetItem(f'{diff_val:+.1f}%')
+                # Set header with difference value (with appropriate unit)
+                if self.use_absolute_diff:
+                    header_item = QTableWidgetItem(f'{diff_val:+.1f}')
+                else:
+                    header_item = QTableWidgetItem(f'{diff_val:+.1f}%')
                 header_item.setFont(QFont("Arial", 8, QFont.Bold))
                 self.legend_table.setHorizontalHeaderItem(i, header_item)
                 

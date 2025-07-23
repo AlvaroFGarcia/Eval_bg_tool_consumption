@@ -17,6 +17,9 @@ from matplotlib.figure import Figure
 from mpl_toolkits.mplot3d import Axes3D
 import threading
 
+# Global list to keep references to SurfaceTableViewer instances
+_active_viewers = []
+
 def seconds_to_hms(seconds):
     """Convert seconds to HH:MM:SS.mmm format"""
     if seconds < 0:
@@ -545,6 +548,11 @@ class AutocompleteCombobox(ttk.Combobox):
             self.autocomplete()
 
 def main():
+    # Initialize QApplication first to ensure proper Qt initialization on main thread
+    qt_app = QApplication.instance()
+    if not qt_app:
+        qt_app = QApplication(sys.argv)
+    
     root = tk.Tk()
     root.title('Fuel Consumption Evaluation Tool')
     root.geometry('500x300')
@@ -617,22 +625,41 @@ def select_csv_columns(column_names, csv_file_path, mdf_file_paths):
 
     tk.Label(columns_window, text='Select the columns for X, Y, and Z axes:', font=('TkDefaultFont', 12, 'bold')).pack(pady=10)
 
+    # Load previous CSV column selections from config
+    csv_config = {}
+    if os.path.exists('fuel_config.json'):
+        try:
+            with open('fuel_config.json', 'r') as f:
+                config_data = json.load(f)
+                csv_config = config_data.get('csv_columns', {})
+        except:
+            pass
+
     # X-axis (RPM)
     tk.Label(columns_window, text='X-axis (RPM):').pack(pady=5)
     x_var = tk.StringVar()
     x_combobox = ttk.Combobox(columns_window, textvariable=x_var, values=column_names, state='readonly')
+    # Set previous selection if available and still in columns
+    if csv_config.get('x_column') in column_names:
+        x_var.set(csv_config['x_column'])
     x_combobox.pack(pady=5)
 
     # Y-axis (ETASP)
     tk.Label(columns_window, text='Y-axis (ETASP):').pack(pady=5)
     y_var = tk.StringVar()
     y_combobox = ttk.Combobox(columns_window, textvariable=y_var, values=column_names, state='readonly')
+    # Set previous selection if available and still in columns
+    if csv_config.get('y_column') in column_names:
+        y_var.set(csv_config['y_column'])
     y_combobox.pack(pady=5)
 
     # Z-axis (Results)
     tk.Label(columns_window, text='Z-axis (Results):').pack(pady=5)
     z_var = tk.StringVar()
     z_combobox = ttk.Combobox(columns_window, textvariable=z_var, values=column_names, state='readonly')
+    # Set previous selection if available and still in columns
+    if csv_config.get('z_column') in column_names:
+        z_var.set(csv_config['z_column'])
     z_combobox.pack(pady=5)
 
     # Separator
@@ -646,15 +673,15 @@ def select_csv_columns(column_names, csv_file_path, mdf_file_paths):
     etasp_frame.pack(pady=5)
 
     tk.Label(etasp_frame, text='ETASP Min:').grid(row=0, column=0, padx=5)
-    etasp_min_var = tk.DoubleVar(value=0.0)
+    etasp_min_var = tk.DoubleVar(value=csv_config.get('etasp_min', 0.0))
     tk.Entry(etasp_frame, textvariable=etasp_min_var, width=10).grid(row=0, column=1, padx=5)
 
     tk.Label(etasp_frame, text='ETASP Max:').grid(row=0, column=2, padx=5)
-    etasp_max_var = tk.DoubleVar(value=1.0)
+    etasp_max_var = tk.DoubleVar(value=csv_config.get('etasp_max', 1.0))
     tk.Entry(etasp_frame, textvariable=etasp_max_var, width=10).grid(row=0, column=3, padx=5)
 
     tk.Label(etasp_frame, text='Number of Intervals:').grid(row=1, column=0, columnspan=2, padx=5, pady=5)
-    etasp_intervals_var = tk.IntVar(value=50)
+    etasp_intervals_var = tk.IntVar(value=csv_config.get('etasp_intervals', 50))
     tk.Entry(etasp_frame, textvariable=etasp_intervals_var, width=10).grid(row=1, column=2, columnspan=2, padx=5, pady=5)
 
     # Auto-detect button
@@ -711,6 +738,30 @@ def select_csv_columns(column_names, csv_file_path, mdf_file_paths):
             if etasp_intervals <= 0:
                 messagebox.showerror('Error', 'Number of intervals must be positive!')
                 return
+            
+            # Save CSV column selections to config (also for view operation)
+            config = {}
+            if os.path.exists('fuel_config.json'):
+                try:
+                    with open('fuel_config.json', 'r') as f:
+                        config = json.load(f)
+                except:
+                    pass
+            
+            config['csv_columns'] = {
+                'x_column': x_col,
+                'y_column': y_col,
+                'z_column': z_col,
+                'etasp_min': etasp_min,
+                'etasp_max': etasp_max,
+                'etasp_intervals': etasp_intervals
+            }
+            
+            try:
+                with open('fuel_config.json', 'w') as f:
+                    json.dump(config, f, indent=2)
+            except Exception as e:
+                print(f"Warning: Could not save configuration: {e}")
                 
             surface_data = load_surface_table(csv_file_path, x_col, y_col, z_col, 
                                             etasp_min, etasp_max, etasp_intervals)
@@ -744,6 +795,30 @@ def select_csv_columns(column_names, csv_file_path, mdf_file_paths):
             if etasp_intervals <= 0:
                 messagebox.showerror('Error', 'Number of intervals must be positive!')
                 return
+            
+            # Save CSV column selections to config
+            config = {}
+            if os.path.exists('fuel_config.json'):
+                try:
+                    with open('fuel_config.json', 'r') as f:
+                        config = json.load(f)
+                except:
+                    pass
+            
+            config['csv_columns'] = {
+                'x_column': x_col,
+                'y_column': y_col,
+                'z_column': z_col,
+                'etasp_min': etasp_min,
+                'etasp_max': etasp_max,
+                'etasp_intervals': etasp_intervals
+            }
+            
+            try:
+                with open('fuel_config.json', 'w') as f:
+                    json.dump(config, f, indent=2)
+            except Exception as e:
+                print(f"Warning: Could not save configuration: {e}")
                 
             surface_data = load_surface_table(csv_file_path, x_col, y_col, z_col, 
                                             etasp_min, etasp_max, etasp_intervals)
@@ -858,16 +933,29 @@ def load_surface_table(csv_file_path, x_col, y_col, z_col, etasp_min=None, etasp
 
 def show_surface_table(surface_data, x_values, y_values, z_values, percentages=None, total_points_inside=0, total_points_all=0, comparison_percentages=None, comparison_name="Comparison"):
     """Show surface table in PyQt5 window"""
-    def run_viewer():
-        app = QApplication.instance()
-        if not app:
-            app = QApplication(sys.argv)
-        viewer = SurfaceTableViewer(surface_data, x_values, y_values, z_values, percentages, total_points_inside, total_points_all, comparison_percentages, comparison_name)
-        viewer.show()
-        app.exec_()
-
-    viewer_thread = threading.Thread(target=run_viewer)
-    viewer_thread.start()
+    global _active_viewers
+    
+    # Get or create QApplication instance on main thread
+    app = QApplication.instance()
+    if not app:
+        app = QApplication(sys.argv)
+    
+    viewer = SurfaceTableViewer(surface_data, x_values, y_values, z_values, percentages, total_points_inside, total_points_all, comparison_percentages, comparison_name)
+    
+    # Add cleanup when viewer is closed
+    def on_viewer_closed():
+        global _active_viewers
+        if viewer in _active_viewers:
+            _active_viewers.remove(viewer)
+    
+    viewer.closeEvent = lambda event: (on_viewer_closed(), event.accept())
+    
+    # Keep reference to prevent garbage collection
+    _active_viewers.append(viewer)
+    viewer.show()
+    
+    # Don't call app.exec_() as it would block the main thread
+    # Let the existing event loop handle the window
 
 def select_raster_and_channels(surface_data, mdf_file_paths):
     raster_window = tk.Toplevel()

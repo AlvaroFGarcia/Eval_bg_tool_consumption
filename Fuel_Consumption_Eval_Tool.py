@@ -398,10 +398,25 @@ class SurfaceTableViewer(QWidget):
         if self.show_comparison and self.show_percentage_diff:
             # Show percentage difference
             if self.percentages is not None and self.comparison_percentages is not None:
-                display_data = self.percentages - self.comparison_percentages
-                # For difference, use symmetric range around 0
-                max_abs_diff = np.nanmax(np.abs(display_data)) if not np.all(np.isnan(display_data)) else 10
-                max_percentage = max_abs_diff
+                # Check if we're comparing surface table values (z_values) vs percentages
+                if np.array_equal(self.percentages, self.z_values):
+                    # We're comparing surface table values, calculate percentage difference
+                    # Percentage difference = ((main - comparison) / comparison) * 100
+                    with np.errstate(divide='ignore', invalid='ignore'):
+                        display_data = np.where(
+                            (self.comparison_percentages != 0) & ~np.isnan(self.comparison_percentages),
+                            ((self.percentages - self.comparison_percentages) / self.comparison_percentages) * 100,
+                            0
+                        )
+                    # For surface table percentage differences, use a reasonable range
+                    max_abs_diff = np.nanmax(np.abs(display_data[np.isfinite(display_data)])) if np.any(np.isfinite(display_data)) else 10
+                    max_percentage = max_abs_diff
+                else:
+                    # Regular percentage-based comparison
+                    display_data = self.percentages - self.comparison_percentages
+                    # For difference, use symmetric range around 0
+                    max_abs_diff = np.nanmax(np.abs(display_data)) if not np.all(np.isnan(display_data)) else 10
+                    max_percentage = max_abs_diff
             else:
                 display_data = np.zeros_like(self.z_values)
         else:
@@ -464,8 +479,20 @@ class SurfaceTableViewer(QWidget):
         if self.show_comparison and self.show_percentage_diff:
             # Show difference legend (symmetric around 0)
             if self.percentages is not None and self.comparison_percentages is not None:
-                display_data = self.percentages - self.comparison_percentages
-                max_abs_diff = np.nanmax(np.abs(display_data)) if not np.all(np.isnan(display_data)) else 10.0
+                # Check if we're comparing surface table values
+                if np.array_equal(self.percentages, self.z_values):
+                    # Calculate percentage differences for surface table comparison
+                    with np.errstate(divide='ignore', invalid='ignore'):
+                        display_data = np.where(
+                            (self.comparison_percentages != 0) & ~np.isnan(self.comparison_percentages),
+                            ((self.percentages - self.comparison_percentages) / self.comparison_percentages) * 100,
+                            0
+                        )
+                    max_abs_diff = np.nanmax(np.abs(display_data[np.isfinite(display_data)])) if np.any(np.isfinite(display_data)) else 10.0
+                else:
+                    # Regular percentage-based comparison
+                    display_data = self.percentages - self.comparison_percentages
+                    max_abs_diff = np.nanmax(np.abs(display_data)) if not np.all(np.isnan(display_data)) else 10.0
             else:
                 max_abs_diff = 10.0
             
@@ -779,13 +806,40 @@ def show_surface_creation_results(x_values, y_values, z_averaged_matrix, count_m
     buttons_frame.pack(fill='x', padx=10, pady=10)
     
     def view_surface_table_from_logs():
-        """View the created surface table"""
+        """View the created surface table with comparison capability"""
+        comparison_percentages = None
+        comparison_name = "Comparison"
+        
+        # If CSV surface data is available, prepare it for comparison
+        if csv_surface_data is not None:
+            try:
+                csv_x_values, csv_y_values, csv_z_values = csv_surface_data
+                
+                # Since both vehicle log and CSV use the same grid ranges, 
+                # we can directly use the CSV data for comparison
+                if csv_x_values.shape == x_values.shape and csv_y_values.shape == y_values.shape:
+                    # Grids match exactly, use CSV data directly
+                    comparison_percentages = csv_z_values
+                else:
+                    # Interpolate CSV data to match vehicle log grid
+                    comparison_percentages = interpolate_surface_to_grid(
+                        csv_x_values, csv_y_values, csv_z_values,
+                        x_values, y_values
+                    )
+                
+                comparison_name = "CSV Surface Table"
+                
+            except Exception as e:
+                print(f"Warning: Failed to prepare CSV comparison data: {e}")
+        
         show_surface_table(
             (x_values, y_values, z_averaged_matrix),
             x_values, y_values, z_averaged_matrix,
-            percentages=None,  # No percentage data for raw surface tables
+            percentages=z_averaged_matrix,  # Use Z values for comparison
             total_points_inside=total_data_points,
-            total_points_all=total_data_points
+            total_points_all=total_data_points,
+            comparison_percentages=comparison_percentages,
+            comparison_name=comparison_name
         )
     
     def export_surface_table():
@@ -823,60 +877,9 @@ def show_surface_creation_results(x_values, y_values, z_averaged_matrix, count_m
         except Exception as e:
             messagebox.showerror('Error', f'Failed to export surface table: {e}')
     
-    def compare_with_csv():
-        """Compare with existing CSV surface table"""
-        if csv_surface_data is not None:
-            # Use the pre-loaded CSV surface data
-            try:
-                csv_x_values, csv_y_values, csv_z_values = csv_surface_data
-                
-                # Since both vehicle log and CSV use the same grid ranges, 
-                # we can directly use the CSV data for comparison
-                if csv_x_values.shape == x_values.shape and csv_y_values.shape == y_values.shape:
-                    # Grids match exactly, use CSV data directly
-                    csv_z_for_comparison = csv_z_values
-                else:
-                    # Interpolate CSV data to match vehicle log grid
-                    csv_z_for_comparison = interpolate_surface_to_grid(
-                        csv_x_values, csv_y_values, csv_z_values,
-                        x_values, y_values
-                    )
-                
-                # Show comparison viewer with vehicle log data and CSV comparison
-                show_surface_table(
-                    (x_values, y_values, z_averaged_matrix),
-                    x_values, y_values, z_averaged_matrix,
-                    percentages=None,
-                    total_points_inside=total_data_points,
-                    total_points_all=total_data_points,
-                    comparison_percentages=csv_z_for_comparison,
-                    comparison_name="CSV Surface Table"
-                )
-                
-            except Exception as e:
-                messagebox.showerror('Error', f'Failed to compare with CSV data: {e}')
-        else:
-            # Fall back to file selection
-            csv_path = filedialog.askopenfilename(
-                title='Select CSV Surface Table for Comparison',
-                filetypes=[('CSV Files', '*.csv')]
-            )
-            
-            if csv_path:
-                try:
-                    # Load CSV surface table
-                    df = pd.read_csv(csv_path, nrows=1)
-                    column_names = df.columns.tolist()
-                    
-                    # Simple column selection for comparison
-                    select_csv_for_comparison(csv_path, column_names, x_values, y_values, z_averaged_matrix, z_param_name)
-                    
-                except Exception as e:
-                    messagebox.showerror('Error', f'Failed to load CSV file: {e}')
     
-    tk.Button(buttons_frame, text='View Surface Table', command=view_surface_table_from_logs).pack(side='left', padx=5)
+    tk.Button(buttons_frame, text='Open Surface Table Viewer', command=view_surface_table_from_logs).pack(side='left', padx=5)
     tk.Button(buttons_frame, text='Export to CSV', command=export_surface_table).pack(side='left', padx=5)
-    tk.Button(buttons_frame, text='Compare with CSV', command=compare_with_csv).pack(side='left', padx=5)
     
     # Preview frame
     preview_frame = tk.Frame(results_window)

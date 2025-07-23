@@ -830,11 +830,17 @@ def show_surface_creation_results(x_values, y_values, z_averaged_matrix, count_m
             try:
                 csv_x_values, csv_y_values, csv_z_values = csv_surface_data
                 
-                # Interpolate CSV data to match vehicle log grid
-                csv_z_interpolated = interpolate_surface_to_grid(
-                    csv_x_values, csv_y_values, csv_z_values,
-                    x_values, y_values
-                )
+                # Since both vehicle log and CSV use the same grid ranges, 
+                # we can directly use the CSV data for comparison
+                if csv_x_values.shape == x_values.shape and csv_y_values.shape == y_values.shape:
+                    # Grids match exactly, use CSV data directly
+                    csv_z_for_comparison = csv_z_values
+                else:
+                    # Interpolate CSV data to match vehicle log grid
+                    csv_z_for_comparison = interpolate_surface_to_grid(
+                        csv_x_values, csv_y_values, csv_z_values,
+                        x_values, y_values
+                    )
                 
                 # Show comparison viewer with vehicle log data and CSV comparison
                 show_surface_table(
@@ -843,7 +849,7 @@ def show_surface_creation_results(x_values, y_values, z_averaged_matrix, count_m
                     percentages=None,
                     total_points_inside=total_data_points,
                     total_points_all=total_data_points,
-                    comparison_percentages=csv_z_interpolated,
+                    comparison_percentages=csv_z_for_comparison,
                     comparison_name="CSV Surface Table"
                 )
                 
@@ -1121,7 +1127,7 @@ def select_csv_surface_parameters(column_names, csv_file_path):
     """Select CSV surface table parameters and load the surface data"""
     columns_window = tk.Toplevel()
     columns_window.title('Configure Surface Table CSV')
-    columns_window.geometry('500x450')
+    columns_window.geometry('500x600')
     columns_window.grab_set()  # Make it modal
 
     tk.Label(columns_window, text='Configure Surface Table Parameters', font=('TkDefaultFont', 14, 'bold')).pack(pady=10)
@@ -1164,8 +1170,27 @@ def select_csv_surface_parameters(column_names, csv_file_path):
     # Separator
     tk.Frame(columns_window, height=2, bg='gray').pack(fill='x', pady=10)
 
+    # Interpolation Parameters
+    tk.Label(columns_window, text='Interpolation Parameters:', font=('TkDefaultFont', 12, 'bold')).pack(pady=10)
+
+    # RPM range frame
+    rpm_frame = tk.Frame(columns_window)
+    rpm_frame.pack(pady=5)
+
+    tk.Label(rpm_frame, text='RPM Min:').grid(row=0, column=0, padx=5)
+    rpm_min_var = tk.DoubleVar(value=csv_config.get('rpm_min', 1000.0))
+    tk.Entry(rpm_frame, textvariable=rpm_min_var, width=10).grid(row=0, column=1, padx=5)
+
+    tk.Label(rpm_frame, text='RPM Max:').grid(row=0, column=2, padx=5)
+    rpm_max_var = tk.DoubleVar(value=csv_config.get('rpm_max', 4000.0))
+    tk.Entry(rpm_frame, textvariable=rpm_max_var, width=10).grid(row=0, column=3, padx=5)
+
+    tk.Label(rpm_frame, text='RPM Intervals:').grid(row=1, column=0, columnspan=2, padx=5, pady=5)
+    rpm_intervals_var = tk.IntVar(value=csv_config.get('rpm_intervals', 50))
+    tk.Entry(rpm_frame, textvariable=rpm_intervals_var, width=10).grid(row=1, column=2, columnspan=2, padx=5, pady=5)
+
     # ETASP Interpolation Parameters
-    tk.Label(columns_window, text='ETASP Interpolation Parameters:', font=('TkDefaultFont', 12, 'bold')).pack(pady=10)
+    tk.Label(columns_window, text='ETASP Parameters:', font=('TkDefaultFont', 12, 'bold')).pack(pady=(15,5))
 
     # ETASP range frame
     etasp_frame = tk.Frame(columns_window)
@@ -1212,8 +1237,43 @@ def select_csv_surface_parameters(column_names, csv_file_path):
         except Exception as e:
             messagebox.showerror('Error', f'Failed to auto-detect ETASP range: {e}')
 
-    btn_auto_detect = tk.Button(columns_window, text='Auto-Detect ETASP Range', command=auto_detect_etasp_range)
-    btn_auto_detect.pack(pady=10)
+    # Auto-detect buttons frame
+    auto_detect_frame = tk.Frame(columns_window)
+    auto_detect_frame.pack(pady=10)
+    
+    def auto_detect_rpm_range():
+        x_col = x_var.get()
+        if not x_col:
+            messagebox.showerror('Error', 'Please select X-axis (RPM) column first!')
+            return
+        
+        try:
+            df_full = pd.read_csv(csv_file_path)
+            if len(df_full) > 0:
+                try:
+                    pd.to_numeric(df_full.iloc[0][x_col])
+                    df = df_full
+                except (ValueError, TypeError):
+                    df = df_full.iloc[1:].reset_index(drop=True)
+            else:
+                df = df_full
+            
+            rpm_data = pd.to_numeric(df[x_col], errors='coerce').dropna()
+            if len(rpm_data) > 0:
+                rpm_min_var.set(round(rpm_data.min(), 0))
+                rpm_max_var.set(round(rpm_data.max(), 0))
+                messagebox.showinfo('Auto-Detect', f'RPM range detected: {rpm_data.min():.0f} to {rpm_data.max():.0f}')
+            else:
+                messagebox.showerror('Error', 'No valid RPM data found!')
+                
+        except Exception as e:
+            messagebox.showerror('Error', f'Failed to auto-detect RPM range: {e}')
+    
+    btn_auto_detect_rpm = tk.Button(auto_detect_frame, text='Auto-Detect RPM Range', command=auto_detect_rpm_range)
+    btn_auto_detect_rpm.pack(side='left', padx=5)
+    
+    btn_auto_detect_etasp = tk.Button(auto_detect_frame, text='Auto-Detect ETASP Range', command=auto_detect_etasp_range)
+    btn_auto_detect_etasp.pack(side='left', padx=5)
 
     surface_data_result = [None]  # Use list to make it mutable in nested function
 
@@ -1231,15 +1291,22 @@ def select_csv_surface_parameters(column_names, csv_file_path):
             return
 
         try:
+            rpm_min = rpm_min_var.get()
+            rpm_max = rpm_max_var.get()
+            rpm_intervals = rpm_intervals_var.get()
             etasp_min = etasp_min_var.get()
             etasp_max = etasp_max_var.get()
             etasp_intervals = etasp_intervals_var.get()
+            
+            if rpm_min >= rpm_max:
+                messagebox.showerror('Error', 'RPM Min must be less than RPM Max!')
+                return
             
             if etasp_min >= etasp_max:
                 messagebox.showerror('Error', 'ETASP Min must be less than ETASP Max!')
                 return
             
-            if etasp_intervals <= 0:
+            if rpm_intervals <= 0 or etasp_intervals <= 0:
                 messagebox.showerror('Error', 'Number of intervals must be positive!')
                 return
             
@@ -1256,6 +1323,9 @@ def select_csv_surface_parameters(column_names, csv_file_path):
                 'x_column': x_col,
                 'y_column': y_col,
                 'z_column': z_col,
+                'rpm_min': rpm_min,
+                'rpm_max': rpm_max,
+                'rpm_intervals': rpm_intervals,
                 'etasp_min': etasp_min,
                 'etasp_max': etasp_max,
                 'etasp_intervals': etasp_intervals
@@ -1268,6 +1338,7 @@ def select_csv_surface_parameters(column_names, csv_file_path):
                 print(f"Warning: Could not save configuration: {e}")
                 
             surface_data = load_surface_table(csv_file_path, x_col, y_col, z_col, 
+                                            rpm_min, rpm_max, rpm_intervals,
                                             etasp_min, etasp_max, etasp_intervals)
             surface_data_result[0] = surface_data
             columns_window.destroy()
@@ -1343,6 +1414,8 @@ def select_vehicle_parameters(mdf_file_paths, surface_data):
              font=('TkDefaultFont', 10, 'bold'), fg='blue').pack(anchor='w')
     tk.Label(csv_info_frame, text=f'ETASP Range: {etasp_min:.3f} - {etasp_max:.3f} ({len(csv_y_values)} points)', 
              font=('TkDefaultFont', 10, 'bold'), fg='blue').pack(anchor='w')
+    tk.Label(csv_info_frame, text='Note: Vehicle data will be interpolated to match these exact ranges', 
+             font=('TkDefaultFont', 9), fg='darkgreen').pack(anchor='w')
     
     # Channel selection
     channel_frame = tk.LabelFrame(main_frame, text='Vehicle Log Channel Selection', padx=10, pady=10)
@@ -1471,8 +1544,8 @@ def select_vehicle_parameters(mdf_file_paths, surface_data):
             # Close window
             params_window.destroy()
             
-            # Process files with analysis mode
-            process_vehicle_analysis_with_csv(
+            # Open second vehicle bundle selection
+            select_second_vehicle_bundle_for_comparison(
                 mdf_file_paths, surface_data,
                 rpm_var.get(), etasp_var.get(), z_param_var.get(),
                 raster_var.get(), filters
@@ -1512,10 +1585,87 @@ def select_vehicle_parameters(mdf_file_paths, surface_data):
         except Exception as e:
             messagebox.showerror('Error', f'Invalid parameters: {e}')
     
-    tk.Button(button_frame, text='Analyze Vehicle Data vs CSV', 
+    tk.Button(button_frame, text='Select Second Vehicle Bundle for Comparison', 
               command=process_vehicle_analysis, bg='lightgreen', font=('TkDefaultFont', 10, 'bold')).pack(side='left', padx=10)
     tk.Button(button_frame, text='Create Surface Table from Vehicle Logs', 
               command=create_surface_from_vehicle, bg='lightblue', font=('TkDefaultFont', 10, 'bold')).pack(side='right', padx=10)
+
+def select_second_vehicle_bundle_for_comparison(first_bundle_paths, surface_data, rpm_channel, etasp_channel, z_param_channel, raster_value, filters):
+    """Select a second vehicle log bundle for comparison with the first bundle"""
+    
+    selection_window = tk.Toplevel()
+    selection_window.title('Select Second Vehicle Bundle for Comparison')
+    selection_window.geometry('600x400')
+    selection_window.grab_set()  # Make it modal
+    
+    tk.Label(selection_window, text='Select Second Vehicle Log Bundle for Comparison', font=('TkDefaultFont', 14, 'bold')).pack(pady=10)
+    tk.Label(selection_window, text=f'First bundle: {len(first_bundle_paths)} files selected', font=('TkDefaultFont', 10)).pack(pady=5)
+    
+    second_bundle_paths = []
+    
+    def select_second_bundle():
+        nonlocal second_bundle_paths
+        file_paths = filedialog.askopenfilenames(
+            title='Select Second Vehicle Log Bundle (MDF/MF4/DAT Files)',
+            filetypes=[
+                ('MDF Files', '*.mdf'),
+                ('MF4 Files', '*.mf4'),
+                ('DAT Files', '*.dat'),
+                ('All Supported', '*.mdf;*.mf4;*.dat'),
+                ('All Files', '*.*')
+            ]
+        )
+        if file_paths:
+            second_bundle_paths = list(file_paths)
+            lbl_second_bundle.config(text=f'Second bundle: {len(second_bundle_paths)} files selected')
+            btn_compare.config(state='normal')
+    
+    btn_select_second = tk.Button(selection_window, text='Select Second Vehicle Bundle', 
+                                  command=select_second_bundle, bg='lightblue')
+    btn_select_second.pack(pady=10)
+    
+    lbl_second_bundle = tk.Label(selection_window, text='No second bundle selected')
+    lbl_second_bundle.pack(pady=5)
+    
+    # Instructions
+    instructions_frame = tk.LabelFrame(selection_window, text='Instructions', padx=10, pady=10)
+    instructions_frame.pack(fill='x', padx=20, pady=20)
+    
+    tk.Label(instructions_frame, text='• Select a second set of vehicle log files to compare with the first set').pack(anchor='w')
+    tk.Label(instructions_frame, text='• Both bundles will be processed using the same CSV ranges for RPM and ETASP').pack(anchor='w') 
+    tk.Label(instructions_frame, text='• The comparison will show the difference between the two vehicle bundles').pack(anchor='w')
+    tk.Label(instructions_frame, text='• Both bundles will also be compared individually against the CSV surface table').pack(anchor='w')
+    
+    def perform_comparison():
+        if not second_bundle_paths:
+            messagebox.showerror('Error', 'Please select a second vehicle bundle!')
+            return
+        
+        try:
+            selection_window.destroy()
+            
+            # Process both bundles using CSV ranges and compare them
+            process_two_vehicle_bundles_comparison(
+                first_bundle_paths, second_bundle_paths, surface_data,
+                rpm_channel, etasp_channel, z_param_channel,
+                raster_value, filters
+            )
+            
+        except Exception as e:
+            messagebox.showerror('Error', f'Failed to perform comparison: {e}')
+    
+    # Buttons frame
+    buttons_frame = tk.Frame(selection_window)
+    buttons_frame.pack(pady=20)
+    
+    btn_compare = tk.Button(buttons_frame, text='Compare Vehicle Bundles', 
+                           command=perform_comparison, bg='lightgreen', 
+                           font=('TkDefaultFont', 10, 'bold'), state='disabled')
+    btn_compare.pack(side='left', padx=10)
+    
+    btn_cancel = tk.Button(buttons_frame, text='Cancel', 
+                          command=selection_window.destroy, bg='lightcoral')
+    btn_cancel.pack(side='right', padx=10)
 
 def select_csv_columns(column_names, csv_file_path, mdf_file_paths):
     columns_window = tk.Toplevel()
@@ -1740,7 +1890,7 @@ def select_csv_columns(column_names, csv_file_path, mdf_file_paths):
                            command=confirm_columns, bg='lightgreen', font=('TkDefaultFont', 10, 'bold'))
     btn_confirm.pack(side='right', padx=10)
 
-def load_surface_table(csv_file_path, x_col, y_col, z_col, etasp_min=None, etasp_max=None, etasp_intervals=None):
+def load_surface_table(csv_file_path, x_col, y_col, z_col, rpm_min=None, rpm_max=None, rpm_intervals=None, etasp_min=None, etasp_max=None, etasp_intervals=None):
     """Load surface table from 3-column CSV format with optional interpolation"""
     # Read the CSV file with headers, then skip the units row (row 1)
     df_full = pd.read_csv(csv_file_path)
@@ -1782,8 +1932,12 @@ def load_surface_table(csv_file_path, x_col, y_col, z_col, etasp_min=None, etasp
     y_data = valid_data[:, 1]
     z_data = valid_data[:, 2]
     
-    # Get unique RPM values (keep original)
-    x_unique = sorted(np.unique(x_data))
+    # Create interpolated RPM grid if parameters provided
+    if rpm_min is not None and rpm_max is not None and rpm_intervals is not None:
+        x_unique = np.linspace(rpm_min, rpm_max, rpm_intervals + 1)
+    else:
+        # Use original RPM values
+        x_unique = sorted(np.unique(x_data))
     
     # Create interpolated ETASP grid if parameters provided
     if etasp_min is not None and etasp_max is not None and etasp_intervals is not None:
@@ -2551,10 +2705,10 @@ def process_vehicle_analysis_with_csv(mdf_file_paths, surface_data, rpm_channel,
             z_param_channel
         )
         
-        # Show comparison with CSV data
+        # Show comparison with vehicle data as main and CSV as comparison
         show_surface_table(
             surface_data,
-            csv_x_values, csv_y_values, csv_z_values,
+            csv_x_values, csv_y_values, total_percentages,
             percentages=total_percentages,
             total_points_inside=0,  # Will be calculated properly
             total_points_all=0,     # Will be calculated properly
@@ -2564,6 +2718,78 @@ def process_vehicle_analysis_with_csv(mdf_file_paths, surface_data, rpm_channel,
         
     except Exception as e:
         messagebox.showerror('Error', f'Failed to process vehicle analysis: {e}')
+
+def process_two_vehicle_bundles_comparison(first_bundle_paths, second_bundle_paths, surface_data, rpm_channel, etasp_channel, z_param_channel, raster_value, filters):
+    """Process and compare two vehicle bundles using CSV ranges"""
+    
+    # Extract ranges from CSV surface data
+    csv_x_values, csv_y_values, csv_z_values = surface_data
+    rpm_min, rpm_max = float(csv_x_values.min()), float(csv_x_values.max())
+    etasp_min, etasp_max = float(csv_y_values.min()), float(csv_y_values.max())
+    
+    # Create grid using CSV ranges
+    x_values = csv_x_values
+    y_values = csv_y_values
+    
+    # Progress window
+    progress_window = tk.Toplevel()
+    progress_window.title('Processing Vehicle Bundles for Comparison')
+    progress_window.geometry('400x200')
+    progress_window.grab_set()
+    
+    progress_label = tk.Label(progress_window, text='Processing first bundle...')
+    progress_label.pack(pady=10)
+    
+    progress_var = tk.DoubleVar()
+    progress_bar = ttk.Progressbar(progress_window, variable=progress_var, maximum=2)
+    progress_bar.pack(pady=10, padx=20, fill='x')
+    
+    progress_window.update()
+    
+    try:
+        # Process first bundle
+        first_bundle_percentages = process_files(
+            surface_data,
+            first_bundle_paths,
+            rpm_channel,
+            etasp_channel,
+            raster_value,
+            filters,
+            z_param_channel
+        )
+        
+        progress_var.set(1)
+        progress_label.config(text='Processing second bundle...')
+        progress_window.update()
+        
+        # Process second bundle
+        second_bundle_percentages = process_files(
+            surface_data,
+            second_bundle_paths,
+            rpm_channel,
+            etasp_channel,
+            raster_value,
+            filters,
+            z_param_channel
+        )
+        
+        progress_var.set(2)
+        progress_window.destroy()
+        
+        # Show comparison with first bundle as main data and second bundle as comparison
+        show_surface_table(
+            surface_data,
+            x_values, y_values, first_bundle_percentages,
+            percentages=first_bundle_percentages,
+            total_points_inside=0,
+            total_points_all=0,
+            comparison_percentages=second_bundle_percentages,
+            comparison_name="Second Vehicle Bundle"
+        )
+        
+    except Exception as e:
+        progress_window.destroy()
+        messagebox.showerror('Error', f'Failed to process vehicle bundles: {e}')
 
 def process_surface_creation_with_csv_ranges(mdf_file_paths, surface_data, rpm_channel, etasp_channel, z_param_channel, raster_value, filters):
     """Create surface table from vehicle logs using CSV ranges"""

@@ -554,6 +554,653 @@ class AutocompleteCombobox(ttk.Combobox):
         if len(event.keysym) == 1:
             self.autocomplete()
 
+def create_surface_from_logs():
+    """Create surface table from vehicle log files with averaged Z values"""
+    
+    # Select MDF files
+    mdf_file_paths = filedialog.askopenfilenames(
+        title='Select MDF/MF4/DAT Files for Surface Creation',
+        filetypes=[('MDF, MF4 and DAT Files', '*.dat *.mdf *.mf4'), ('DAT Files', '*.dat'), ('MDF Files', '*.mdf'), ('MF4 Files', '*.mf4')]
+    )
+    
+    if not mdf_file_paths:
+        messagebox.showerror('Error', 'No MDF/MF4/DAT files selected!')
+        return
+    
+    # Define surface grid parameters
+    select_surface_parameters(mdf_file_paths)
+
+def select_surface_parameters(mdf_file_paths):
+    """Select parameters for surface table creation"""
+    params_window = tk.Toplevel()
+    params_window.title('Surface Table Parameters')
+    params_window.geometry('600x700')
+    
+    # Load sample file to get channel names
+    try:
+        sample_mdf = MDF(mdf_file_paths[0])
+        all_channels = list(sample_mdf.channels_db.keys())
+    except Exception as e:
+        messagebox.showerror('Error', f'Failed to load sample file: {e}')
+        return
+    
+    # Load config if exists
+    config = {}
+    if os.path.exists('fuel_config.json'):
+        try:
+            with open('fuel_config.json', 'r') as f:
+                config = json.load(f)
+        except:
+            pass
+    
+    # Variables for channels
+    rpm_var = tk.StringVar(value=config.get('rpm_channel', ''))
+    etasp_var = tk.StringVar(value=config.get('etasp_channel', ''))
+    z_param_var = tk.StringVar()
+    
+    # Surface grid parameters
+    rpm_min_var = tk.DoubleVar(value=800)
+    rpm_max_var = tk.DoubleVar(value=2500)
+    rpm_intervals_var = tk.IntVar(value=17)
+    
+    etasp_min_var = tk.DoubleVar(value=0.1)
+    etasp_max_var = tk.DoubleVar(value=0.9)
+    etasp_intervals_var = tk.IntVar(value=8)
+    
+    raster_var = tk.DoubleVar(value=0.02)
+    
+    # Create UI
+    main_frame = tk.Frame(params_window)
+    main_frame.pack(fill='both', expand=True, padx=10, pady=10)
+    
+    # Channel selection
+    tk.Label(main_frame, text='Channel Selection', font=('TkDefaultFont', 12, 'bold')).pack(anchor='w', pady=(0, 10))
+    
+    tk.Label(main_frame, text='RPM Channel:').pack(anchor='w')
+    rpm_combobox = AutocompleteCombobox(main_frame, textvariable=rpm_var, width=60)
+    rpm_combobox.set_completion_list(all_channels)
+    rpm_combobox.pack(anchor='w', pady=(0, 5))
+    
+    tk.Label(main_frame, text='ETASP Channel:').pack(anchor='w')
+    etasp_combobox = AutocompleteCombobox(main_frame, textvariable=etasp_var, width=60)
+    etasp_combobox.set_completion_list(all_channels)
+    etasp_combobox.pack(anchor='w', pady=(0, 5))
+    
+    tk.Label(main_frame, text='Z Parameter Channel (for averaging):').pack(anchor='w')
+    z_param_combobox = AutocompleteCombobox(main_frame, textvariable=z_param_var, width=60)
+    z_param_combobox.set_completion_list(all_channels)
+    z_param_combobox.pack(anchor='w', pady=(0, 15))
+    
+    # Surface grid parameters
+    tk.Label(main_frame, text='Surface Grid Parameters', font=('TkDefaultFont', 12, 'bold')).pack(anchor='w', pady=(0, 10))
+    
+    # RPM range
+    rpm_frame = tk.Frame(main_frame)
+    rpm_frame.pack(fill='x', pady=5)
+    tk.Label(rpm_frame, text='RPM Range:').pack(side='left')
+    tk.Label(rpm_frame, text='Min:').pack(side='left', padx=(20, 2))
+    tk.Entry(rpm_frame, textvariable=rpm_min_var, width=8).pack(side='left')
+    tk.Label(rpm_frame, text='Max:').pack(side='left', padx=(10, 2))
+    tk.Entry(rpm_frame, textvariable=rpm_max_var, width=8).pack(side='left')
+    tk.Label(rpm_frame, text='Intervals:').pack(side='left', padx=(10, 2))
+    tk.Entry(rpm_frame, textvariable=rpm_intervals_var, width=8).pack(side='left')
+    
+    # ETASP range
+    etasp_frame = tk.Frame(main_frame)
+    etasp_frame.pack(fill='x', pady=5)
+    tk.Label(etasp_frame, text='ETASP Range:').pack(side='left')
+    tk.Label(etasp_frame, text='Min:').pack(side='left', padx=(20, 2))
+    tk.Entry(etasp_frame, textvariable=etasp_min_var, width=8).pack(side='left')
+    tk.Label(etasp_frame, text='Max:').pack(side='left', padx=(10, 2))
+    tk.Entry(etasp_frame, textvariable=etasp_max_var, width=8).pack(side='left')
+    tk.Label(etasp_frame, text='Intervals:').pack(side='left', padx=(10, 2))
+    tk.Entry(etasp_frame, textvariable=etasp_intervals_var, width=8).pack(side='left')
+    
+    # Raster value
+    raster_frame = tk.Frame(main_frame)
+    raster_frame.pack(fill='x', pady=5)
+    tk.Label(raster_frame, text='Raster Value (seconds):').pack(side='left')
+    tk.Entry(raster_frame, textvariable=raster_var, width=8).pack(side='left', padx=(20, 0))
+    
+    # Filters section (similar to existing implementation)
+    filters_frame = tk.Frame(main_frame)
+    filters_frame.pack(fill='both', expand=True, pady=(15, 0))
+    
+    tk.Label(filters_frame, text='Filters (Optional)', font=('TkDefaultFont', 12, 'bold')).pack(anchor='w')
+    
+    # Container for filter entries
+    filters_container = tk.Frame(filters_frame)
+    filters_container.pack(fill='both', expand=True, pady=5)
+    
+    # Scroll for filters
+    filters_canvas = tk.Canvas(filters_container, height=150)
+    filters_scrollbar = tk.Scrollbar(filters_container, orient='vertical', command=filters_canvas.yview)
+    filters_scrollable_frame = tk.Frame(filters_canvas)
+    
+    filters_scrollable_frame.bind(
+        '<Configure>',
+        lambda e: filters_canvas.configure(scrollregion=filters_canvas.bbox('all'))
+    )
+    
+    filters_canvas.create_window((0, 0), window=filters_scrollable_frame, anchor='nw')
+    filters_canvas.configure(yscrollcommand=filters_scrollbar.set)
+    
+    filters_canvas.pack(side='left', fill='both', expand=True)
+    filters_scrollbar.pack(side='right', fill='y')
+    
+    # Filter management
+    filter_entries = []
+    
+    def add_filter():
+        filter_frame = tk.Frame(filters_scrollable_frame)
+        filter_frame.pack(fill='x', pady=2)
+        
+        # Channel
+        tk.Label(filter_frame, text='Channel:').pack(side='left')
+        channel_var = tk.StringVar()
+        channel_cb = AutocompleteCombobox(filter_frame, textvariable=channel_var, width=20)
+        channel_cb.set_completion_list(all_channels)
+        channel_cb.pack(side='left', padx=2)
+        
+        # Condition
+        tk.Label(filter_frame, text='Condition:').pack(side='left', padx=(5, 2))
+        condition_var = tk.StringVar(value='within range')
+        condition_cb = ttk.Combobox(filter_frame, textvariable=condition_var, 
+                                   values=['within range', 'outside range'], 
+                                   width=12, state='readonly')
+        condition_cb.pack(side='left', padx=2)
+        
+        # Min/Max values
+        tk.Label(filter_frame, text='Min:').pack(side='left', padx=(5, 2))
+        min_var = tk.DoubleVar()
+        min_entry = tk.Entry(filter_frame, textvariable=min_var, width=8)
+        min_entry.pack(side='left', padx=2)
+        
+        tk.Label(filter_frame, text='Max:').pack(side='left', padx=(5, 2))
+        max_var = tk.DoubleVar()
+        max_entry = tk.Entry(filter_frame, textvariable=max_var, width=8)
+        max_entry.pack(side='left', padx=2)
+        
+        # Remove button
+        def remove_filter():
+            filter_frame.destroy()
+            filter_entries.remove(filter_entry)
+        
+        remove_btn = tk.Button(filter_frame, text='Remove', command=remove_filter)
+        remove_btn.pack(side='left', padx=(5, 0))
+        
+        filter_entry = {
+            'frame': filter_frame,
+            'channel_var': channel_var,
+            'condition_var': condition_var,
+            'min_var': min_var,
+            'max_var': max_var
+        }
+        filter_entries.append(filter_entry)
+    
+    add_filter_btn = tk.Button(filters_frame, text='Add Filter', command=add_filter)
+    add_filter_btn.pack(pady=5)
+    
+    # Process button
+    def process_surface_creation():
+        # Validate inputs
+        if not rpm_var.get() or not etasp_var.get() or not z_param_var.get():
+            messagebox.showerror('Error', 'Please select RPM, ETASP, and Z parameter channels')
+            return
+        
+        try:
+            # Collect filter configurations
+            filters = []
+            for filter_entry in filter_entries:
+                if filter_entry['channel_var'].get():  # Only add if channel is selected
+                    filters.append({
+                        'channel': filter_entry['channel_var'].get(),
+                        'condition': filter_entry['condition_var'].get(),
+                        'min': filter_entry['min_var'].get(),
+                        'max': filter_entry['max_var'].get()
+                    })
+            
+            # Close window
+            params_window.destroy()
+            
+            # Process files
+            process_surface_creation_from_logs(
+                mdf_file_paths,
+                rpm_var.get(),
+                etasp_var.get(),
+                z_param_var.get(),
+                (rpm_min_var.get(), rpm_max_var.get(), rpm_intervals_var.get()),
+                (etasp_min_var.get(), etasp_max_var.get(), etasp_intervals_var.get()),
+                raster_var.get(),
+                filters
+            )
+            
+        except Exception as e:
+            messagebox.showerror('Error', f'Invalid parameters: {e}')
+    
+    process_btn = tk.Button(main_frame, text='Create Surface Table', 
+                           command=process_surface_creation, bg='lightgreen')
+    process_btn.pack(pady=20)
+
+def process_surface_creation_from_logs(mdf_file_paths, rpm_channel, etasp_channel, z_param_channel,
+                                      rpm_params, etasp_params, raster_value, filters):
+    """Process vehicle log files to create averaged surface table"""
+    
+    # Unpack parameters
+    rpm_min, rpm_max, rpm_intervals = rpm_params
+    etasp_min, etasp_max, etasp_intervals = etasp_params
+    
+    # Create grid
+    x_values = np.linspace(rpm_min, rpm_max, rpm_intervals + 1)
+    y_values = np.linspace(etasp_min, etasp_max, etasp_intervals + 1)
+    
+    # Initialize accumulation arrays
+    z_sum_matrix = np.zeros((len(y_values), len(x_values)))
+    count_matrix = np.zeros((len(y_values), len(x_values)))
+    
+    total_data_points = 0
+    files_processed = 0
+    
+    # Progress window
+    progress_window = tk.Toplevel()
+    progress_window.title('Processing Vehicle Logs')
+    progress_window.geometry('400x150')
+    progress_window.grab_set()  # Make it modal
+    
+    progress_label = tk.Label(progress_window, text='Processing files...')
+    progress_label.pack(pady=10)
+    
+    progress_var = tk.DoubleVar()
+    progress_bar = ttk.Progressbar(progress_window, variable=progress_var, maximum=len(mdf_file_paths))
+    progress_bar.pack(pady=10, padx=20, fill='x')
+    
+    file_label = tk.Label(progress_window, text='')
+    file_label.pack(pady=5)
+    
+    progress_window.update()
+    
+    try:
+        for i, file_path in enumerate(mdf_file_paths):
+            file_label.config(text=f'Processing: {os.path.basename(file_path)}')
+            progress_window.update()
+            
+            try:
+                # Process single file
+                file_z_sum, file_count, file_data_points = process_single_file_for_surface(
+                    file_path, rpm_channel, etasp_channel, z_param_channel,
+                    x_values, y_values, raster_value, filters
+                )
+                
+                # Accumulate results
+                z_sum_matrix += file_z_sum
+                count_matrix += file_count
+                total_data_points += file_data_points
+                files_processed += 1
+                
+            except Exception as e:
+                print(f"Warning: Failed to process {os.path.basename(file_path)}: {e}")
+                continue
+            
+            progress_var.set(i + 1)
+            progress_window.update()
+        
+        progress_window.destroy()
+        
+        if files_processed == 0:
+            messagebox.showerror('Error', 'No files could be processed successfully!')
+            return
+        
+        # Calculate averaged surface table
+        z_averaged_matrix = np.zeros_like(z_sum_matrix)
+        
+        # Avoid division by zero
+        valid_mask = count_matrix > 0
+        z_averaged_matrix[valid_mask] = z_sum_matrix[valid_mask] / count_matrix[valid_mask]
+        z_averaged_matrix[~valid_mask] = np.nan
+        
+        # Show results
+        show_surface_creation_results(x_values, y_values, z_averaged_matrix, count_matrix,
+                                    total_data_points, files_processed, z_param_channel)
+        
+    except Exception as e:
+        progress_window.destroy()
+        messagebox.showerror('Error', f'Failed to process files: {e}')
+
+def process_single_file_for_surface(file_path, rpm_channel, etasp_channel, z_param_channel,
+                                   x_values, y_values, raster_value, filters):
+    """Process a single file for surface creation"""
+    
+    # Load file
+    mdf = MDF(file_path)
+    
+    # Get signals
+    rpm_signal = mdf.get(rpm_channel)
+    etasp_signal = mdf.get(etasp_channel)
+    z_param_signal = mdf.get(z_param_channel)
+    
+    # Create common time base
+    start_time = max(rpm_signal.timestamps[0], etasp_signal.timestamps[0], z_param_signal.timestamps[0])
+    end_time = min(rpm_signal.timestamps[-1], etasp_signal.timestamps[-1], z_param_signal.timestamps[-1])
+    time_base = np.arange(start_time, end_time, raster_value)
+    
+    if len(time_base) == 0:
+        return np.zeros((len(y_values), len(x_values))), np.zeros((len(y_values), len(x_values))), 0
+    
+    # Resample signals
+    rpm_resampled = np.interp(time_base, rpm_signal.timestamps, rpm_signal.samples)
+    etasp_resampled = np.interp(time_base, etasp_signal.timestamps, etasp_signal.samples)
+    z_param_resampled = np.interp(time_base, z_param_signal.timestamps, z_param_signal.samples)
+    
+    # Apply filters
+    mask = np.ones(len(time_base), dtype=bool)
+    
+    for filter_config in filters:
+        try:
+            filter_signal = mdf.get(filter_config['channel'])
+            filter_resampled = np.interp(time_base, filter_signal.timestamps, filter_signal.samples)
+            
+            if filter_config['condition'] == 'within range':
+                filter_mask = (filter_resampled >= filter_config['min']) & (filter_resampled <= filter_config['max'])
+            else:  # outside range
+                filter_mask = (filter_resampled < filter_config['min']) | (filter_resampled > filter_config['max'])
+            
+            mask = mask & filter_mask
+        except:
+            continue  # Skip invalid filters
+    
+    # Apply mask
+    rpm_filtered = rpm_resampled[mask]
+    etasp_filtered = etasp_resampled[mask]
+    z_param_filtered = z_param_resampled[mask]
+    
+    # Check bounds and filter out invalid values
+    x_min, x_max = x_values.min(), x_values.max()
+    y_min, y_max = y_values.min(), y_values.max()
+    
+    bounds_mask = (rpm_filtered >= x_min) & (rpm_filtered <= x_max) & \
+                  (etasp_filtered >= y_min) & (etasp_filtered <= y_max) & \
+                  np.isfinite(z_param_filtered)  # Ensure Z values are finite
+    
+    rpm_bounded = rpm_filtered[bounds_mask]
+    etasp_bounded = etasp_filtered[bounds_mask]
+    z_param_bounded = z_param_filtered[bounds_mask]
+    
+    # Initialize matrices for this file
+    z_sum_matrix = np.zeros((len(y_values), len(x_values)))
+    count_matrix = np.zeros((len(y_values), len(x_values)))
+    
+    # Assign values to cells with averaging
+    for i in range(len(rpm_bounded)):
+        rpm_val = rpm_bounded[i]
+        etasp_val = etasp_bounded[i]
+        z_val = z_param_bounded[i]
+        
+        # Find which cell this point belongs to
+        # Use grid boundaries instead of closest point for proper averaging
+        x_cell_idx = np.digitize(rpm_val, x_values) - 1
+        y_cell_idx = np.digitize(etasp_val, y_values) - 1
+        
+        # Ensure indices are within bounds
+        x_cell_idx = max(0, min(x_cell_idx, len(x_values) - 1))
+        y_cell_idx = max(0, min(y_cell_idx, len(y_values) - 1))
+        
+        # Accumulate sum and count for averaging
+        z_sum_matrix[y_cell_idx, x_cell_idx] += z_val
+        count_matrix[y_cell_idx, x_cell_idx] += 1
+    
+    mdf.close()
+    
+    return z_sum_matrix, count_matrix, len(rpm_bounded)
+
+def show_surface_creation_results(x_values, y_values, z_averaged_matrix, count_matrix,
+                                 total_data_points, files_processed, z_param_name):
+    """Show results of surface table creation"""
+    
+    results_window = tk.Toplevel()
+    results_window.title('Surface Table Creation Results')
+    results_window.geometry('800x600')
+    
+    # Statistics frame
+    stats_frame = tk.Frame(results_window)
+    stats_frame.pack(fill='x', padx=10, pady=10)
+    
+    tk.Label(stats_frame, text='Surface Table Creation Results', font=('TkDefaultFont', 14, 'bold')).pack(anchor='w')
+    tk.Label(stats_frame, text=f'Files processed: {files_processed}').pack(anchor='w')
+    tk.Label(stats_frame, text=f'Total data points used: {total_data_points:,}').pack(anchor='w')
+    tk.Label(stats_frame, text=f'Grid size: {len(x_values)} x {len(y_values)} = {len(x_values) * len(y_values)} cells').pack(anchor='w')
+    
+    # Count statistics
+    cells_with_data = np.sum(count_matrix > 0)
+    total_cells = count_matrix.size
+    coverage_percentage = (cells_with_data / total_cells) * 100
+    
+    tk.Label(stats_frame, text=f'Cells with data: {cells_with_data}/{total_cells} ({coverage_percentage:.1f}%)').pack(anchor='w')
+    
+    if cells_with_data > 0:
+        avg_points_per_cell = total_data_points / cells_with_data
+        tk.Label(stats_frame, text=f'Average points per filled cell: {avg_points_per_cell:.1f}').pack(anchor='w')
+    
+    # Buttons frame
+    buttons_frame = tk.Frame(results_window)
+    buttons_frame.pack(fill='x', padx=10, pady=10)
+    
+    def view_surface_table_from_logs():
+        """View the created surface table"""
+        show_surface_table(
+            (x_values, y_values, z_averaged_matrix),
+            x_values, y_values, z_averaged_matrix,
+            percentages=None,  # No percentage data for raw surface tables
+            total_points_inside=total_data_points,
+            total_points_all=total_data_points
+        )
+    
+    def export_surface_table():
+        """Export the surface table to CSV"""
+        try:
+            export_path = filedialog.asksaveasfilename(
+                title='Export Surface Table',
+                defaultextension='.csv',
+                filetypes=[('CSV Files', '*.csv')]
+            )
+            
+            if export_path:
+                # Create export data
+                export_data = []
+                
+                # Add header
+                export_data.append(['RPM', 'ETASP', z_param_name])
+                export_data.append(['rpm', '-', 'units'])  # Units row
+                
+                # Add data points
+                for i, etasp_val in enumerate(y_values):
+                    for j, rpm_val in enumerate(x_values):
+                        z_val = z_averaged_matrix[i, j]
+                        if not np.isnan(z_val):
+                            export_data.append([rpm_val, etasp_val, z_val])
+                
+                # Write to CSV
+                import csv
+                with open(export_path, 'w', newline='') as csvfile:
+                    writer = csv.writer(csvfile)
+                    writer.writerows(export_data)
+                
+                messagebox.showinfo('Success', f'Surface table exported to:\n{export_path}')
+        
+        except Exception as e:
+            messagebox.showerror('Error', f'Failed to export surface table: {e}')
+    
+    def compare_with_csv():
+        """Compare with existing CSV surface table"""
+        csv_path = filedialog.askopenfilename(
+            title='Select CSV Surface Table for Comparison',
+            filetypes=[('CSV Files', '*.csv')]
+        )
+        
+        if csv_path:
+            try:
+                # Load CSV surface table
+                df = pd.read_csv(csv_path, nrows=1)
+                column_names = df.columns.tolist()
+                
+                # Simple column selection for comparison
+                select_csv_for_comparison(csv_path, column_names, x_values, y_values, z_averaged_matrix, z_param_name)
+                
+            except Exception as e:
+                messagebox.showerror('Error', f'Failed to load CSV file: {e}')
+    
+    tk.Button(buttons_frame, text='View Surface Table', command=view_surface_table_from_logs).pack(side='left', padx=5)
+    tk.Button(buttons_frame, text='Export to CSV', command=export_surface_table).pack(side='left', padx=5)
+    tk.Button(buttons_frame, text='Compare with CSV', command=compare_with_csv).pack(side='left', padx=5)
+    
+    # Preview frame
+    preview_frame = tk.Frame(results_window)
+    preview_frame.pack(fill='both', expand=True, padx=10, pady=10)
+    
+    tk.Label(preview_frame, text='Surface Table Preview (first 10x10 cells):', font=('TkDefaultFont', 12, 'bold')).pack(anchor='w')
+    
+    # Create preview table
+    preview_table = tk.Frame(preview_frame)
+    preview_table.pack(pady=5)
+    
+    # Show a limited preview
+    max_rows = min(10, len(y_values))
+    max_cols = min(10, len(x_values))
+    
+    for i in range(max_rows + 1):
+        for j in range(max_cols + 1):
+            if i == 0 and j == 0:
+                text = "ETASP\\RPM"
+            elif i == 0:
+                text = f"{x_values[j-1]:.0f}"
+            elif j == 0:
+                text = f"{y_values[i-1]:.2f}"
+            else:
+                z_val = z_averaged_matrix[i-1, j-1]
+                if np.isnan(z_val):
+                    text = "-"
+                else:
+                    text = f"{z_val:.2f}"
+            
+            label = tk.Label(preview_table, text=text, relief='solid', width=8, borderwidth=1)
+            label.grid(row=i, column=j, sticky='nsew')
+
+def select_csv_for_comparison(csv_path, column_names, log_x_values, log_y_values, log_z_matrix, z_param_name):
+    """Select CSV columns for comparison with log-based surface table"""
+    
+    comparison_window = tk.Toplevel()
+    comparison_window.title('Select CSV Columns for Comparison')
+    comparison_window.geometry('400x300')
+    
+    tk.Label(comparison_window, text='Select columns from CSV file:', font=('TkDefaultFont', 12, 'bold')).pack(pady=10)
+    
+    # Column selection
+    tk.Label(comparison_window, text='X-axis (RPM):').pack(anchor='w', padx=20)
+    x_var = tk.StringVar()
+    x_combo = ttk.Combobox(comparison_window, textvariable=x_var, values=column_names, state='readonly')
+    x_combo.pack(pady=2, padx=20, fill='x')
+    
+    tk.Label(comparison_window, text='Y-axis (ETASP):').pack(anchor='w', padx=20)
+    y_var = tk.StringVar()
+    y_combo = ttk.Combobox(comparison_window, textvariable=y_var, values=column_names, state='readonly')
+    y_combo.pack(pady=2, padx=20, fill='x')
+    
+    tk.Label(comparison_window, text='Z-axis (Value):').pack(anchor='w', padx=20)
+    z_var = tk.StringVar()
+    z_combo = ttk.Combobox(comparison_window, textvariable=z_var, values=column_names, state='readonly')
+    z_combo.pack(pady=2, padx=20, fill='x')
+    
+    def perform_comparison():
+        if not x_var.get() or not y_var.get() or not z_var.get():
+            messagebox.showerror('Error', 'Please select all columns')
+            return
+        
+        try:
+            # Load CSV surface table
+            csv_x_values, csv_y_values, csv_z_matrix = load_surface_table(
+                csv_path, x_var.get(), y_var.get(), z_var.get()
+            )
+            
+            # Interpolate CSV data to match log data grid
+            csv_z_interpolated = interpolate_surface_to_grid(
+                csv_x_values, csv_y_values, csv_z_matrix,
+                log_x_values, log_y_values
+            )
+            
+            # Show comparison
+            show_surface_comparison(
+                log_x_values, log_y_values, log_z_matrix, csv_z_interpolated,
+                f"Vehicle Logs ({z_param_name})", f"CSV ({z_var.get()})"
+            )
+            
+            comparison_window.destroy()
+            
+        except Exception as e:
+            messagebox.showerror('Error', f'Failed to perform comparison: {e}')
+    
+    tk.Button(comparison_window, text='Compare', command=perform_comparison, bg='lightgreen').pack(pady=20)
+
+def interpolate_surface_to_grid(source_x, source_y, source_z, target_x, target_y):
+    """Interpolate source surface data to target grid"""
+    
+    # Create meshgrids
+    source_X, source_Y = np.meshgrid(source_x, source_y)
+    target_X, target_Y = np.meshgrid(target_x, target_y)
+    
+    # Flatten source data and remove NaN values
+    source_points = []
+    source_values = []
+    
+    for i in range(len(source_y)):
+        for j in range(len(source_x)):
+            if not np.isnan(source_z[i, j]):
+                source_points.append([source_X[i, j], source_Y[i, j]])
+                source_values.append(source_z[i, j])
+    
+    if len(source_points) == 0:
+        return np.full_like(target_X, np.nan)
+    
+    source_points = np.array(source_points)
+    source_values = np.array(source_values)
+    
+    # Interpolate to target grid
+    try:
+        target_z = griddata(
+            source_points, source_values,
+            (target_X, target_Y),
+            method='linear',
+            fill_value=np.nan
+        )
+        
+        # Fill remaining NaN values with nearest neighbor if available
+        nan_mask = np.isnan(target_z)
+        if np.any(nan_mask):
+            target_z_nearest = griddata(
+                source_points, source_values,
+                (target_X, target_Y),
+                method='nearest'
+            )
+            target_z[nan_mask] = target_z_nearest[nan_mask]
+            
+    except Exception as e:
+        print(f"Interpolation warning: {e}")
+        target_z = np.full_like(target_X, np.nan)
+    
+    return target_z
+
+def show_surface_comparison(x_values, y_values, surface1, surface2, name1, name2):
+    """Show comparison between two surface tables"""
+    
+    # Calculate difference
+    difference = surface1 - surface2
+    
+    # Show both surfaces and their difference
+    show_surface_table(
+        (x_values, y_values, surface1),
+        x_values, y_values, surface1,
+        comparison_percentages=surface2,
+        comparison_name=name2
+    )
+
 def main():
     # Initialize QApplication first to ensure proper Qt initialization on main thread
     qt_app = QApplication.instance()
@@ -622,6 +1269,14 @@ def main():
 
     btn_proceed = tk.Button(root, text='Proceed', command=proceed)
     btn_proceed.pack(pady=20)
+
+    # Add separator
+    tk.Frame(root, height=2, bd=1, relief=tk.SUNKEN).pack(fill=tk.X, padx=5, pady=10)
+
+    # New button for creating surface table from vehicle logs
+    btn_create_surface = tk.Button(root, text='Create Surface Table from Vehicle Logs', 
+                                   command=lambda: create_surface_from_logs())
+    btn_create_surface.pack(pady=10)
 
     root.mainloop()
 

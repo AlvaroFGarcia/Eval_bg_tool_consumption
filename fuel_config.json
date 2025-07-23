@@ -1,1 +1,13 @@
-{"rpm_channel": "RPMX1", "etasp_channel": "ETASP", "filters": []}
+{
+  "rpm_channel": "RPMX1",
+  "etasp_channel": "ETASP",
+  "filters": [],
+  "csv_columns": {
+    "x_column": "RPM",
+    "y_column": "ETASP",
+    "z_column": "Fuel_Consumption",
+    "etasp_min": 0.0,
+    "etasp_max": 1.0,
+    "etasp_intervals": 50
+  }
+}

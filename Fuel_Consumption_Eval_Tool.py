@@ -442,8 +442,13 @@ class SurfaceTableViewer(QWidget):
                         # Absolute difference for percentages = CSV - vehicle_log
                         display_data = self.comparison_percentages - self.percentages
                     else:
-                        # Percentage point difference (already in percentage units) = CSV - vehicle_log
-                        display_data = self.comparison_percentages - self.percentages
+                        # Percentage difference = ((CSV - vehicle_log) / vehicle_log) * 100
+                        with np.errstate(divide='ignore', invalid='ignore'):
+                            display_data = np.where(
+                                (self.percentages != 0) & ~np.isnan(self.percentages),
+                                ((self.comparison_percentages - self.percentages) / self.percentages) * 100,
+                                0
+                            )
                     # For difference, use symmetric range around 0
                     max_abs_diff = np.nanmax(np.abs(display_data)) if not np.all(np.isnan(display_data)) else 10
                     max_percentage = max_abs_diff
@@ -532,7 +537,17 @@ class SurfaceTableViewer(QWidget):
                     max_abs_diff = np.nanmax(np.abs(display_data[np.isfinite(display_data)])) if np.any(np.isfinite(display_data)) else 10.0
                 else:
                     # Regular percentage-based comparison
-                    display_data = self.comparison_percentages - self.percentages
+                    if self.use_absolute_diff:
+                        # Absolute difference = CSV - vehicle_log
+                        display_data = self.comparison_percentages - self.percentages
+                    else:
+                        # Percentage difference = ((CSV - vehicle_log) / vehicle_log) * 100
+                        with np.errstate(divide='ignore', invalid='ignore'):
+                            display_data = np.where(
+                                (self.percentages != 0) & ~np.isnan(self.percentages),
+                                ((self.comparison_percentages - self.percentages) / self.percentages) * 100,
+                                0
+                            )
                     max_abs_diff = np.nanmax(np.abs(display_data)) if not np.all(np.isnan(display_data)) else 10.0
             else:
                 max_abs_diff = 10.0

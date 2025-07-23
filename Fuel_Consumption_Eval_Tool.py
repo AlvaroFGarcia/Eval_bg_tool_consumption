@@ -2165,6 +2165,34 @@ def select_channels_and_filters(surface_data, raster_value, mdf_file_paths):
     btn_confirm = tk.Button(channels_window, text='Confirm', command=confirm_channels)
     btn_confirm.pack(pady=10)
 
+def process_files(surface_data, mdf_file_paths, rpm_channel, etasp_channel, raster_value, filters, z_param_channel=None):
+    """Process files and return percentages without showing results window"""
+    x_values, y_values, z_values = surface_data
+    
+    # Initialize counters
+    total_point_counts = np.zeros_like(z_values)
+    total_points_inside_all_files = 0
+    
+    for file_path in mdf_file_paths:
+        try:
+            result = process_single_file(file_path, surface_data, raster_value, 
+                                       rpm_channel, etasp_channel, filters)
+            if result:
+                # Sum actual point counts (not percentages)
+                total_point_counts += result['point_counts']
+                total_points_inside_all_files += result['bounded_points']
+        except Exception as e:
+            print(f'Warning: Failed to process {os.path.basename(file_path)}: {e}')
+            continue
+    
+    # Convert point counts to percentages
+    if total_points_inside_all_files > 0:
+        total_percentages = (total_point_counts / total_points_inside_all_files) * 100
+    else:
+        total_percentages = np.zeros_like(z_values)
+    
+    return total_percentages
+
 def process_files_and_show_results(surface_data, raster_value, rpm_channel, etasp_channel, 
                                  filters, mdf_file_paths):
     """Process files and show results with surface table and percentages"""

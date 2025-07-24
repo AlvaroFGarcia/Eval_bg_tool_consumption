@@ -86,6 +86,7 @@ class SurfaceTableViewer(QWidget):
         # Color settings
         self.min_color = QColor(255, 255, 255)  # White for minimum
         self.max_color = QColor(0, 100, 255)    # Blue for maximum
+        self.medium_color = QColor(255, 255, 255)  # White for medium (comparison mode)
         self.color_bias = 1.0  # Linear bias
         self.use_manual_range = False
         self.manual_min = 0.0
@@ -159,6 +160,13 @@ class SurfaceTableViewer(QWidget):
         self.max_color_btn.setStyleSheet(f"background-color: {self.max_color.name()}")
         self.max_color_btn.clicked.connect(self.choose_max_color)
         color_row1.addWidget(self.max_color_btn)
+        
+        # Medium color button (only visible in comparison mode)
+        self.medium_color_btn = QPushButton("Medium Color")
+        self.medium_color_btn.setStyleSheet(f"background-color: {self.medium_color.name()}")
+        self.medium_color_btn.clicked.connect(self.choose_medium_color)
+        self.medium_color_btn.setVisible(False)  # Hidden by default
+        color_row1.addWidget(self.medium_color_btn)
         
         color_row1.addStretch()
         control_panel.addLayout(color_row1)
@@ -266,9 +274,19 @@ class SurfaceTableViewer(QWidget):
         self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(QTableWidget.SelectItems)
         
-        # Dynamic column sizing
-        optimal_cell_width = max(50, min(100, (self.width() - 150) // len(x_values)))
-        optimal_cell_height = max(20, min(40, (self.height() - 200) // len(y_values)))
+        # Dynamic column sizing with better support for high DPI screens
+        app = QApplication.instance()
+        screen = app.primaryScreen()
+        dpi_scale = screen.logicalDotsPerInch() / 96.0  # Standard DPI is 96
+        
+        # Minimum sizes adjusted for DPI and to accommodate two lines of text
+        min_cell_width = max(60, int(60 * dpi_scale))
+        min_cell_height = max(35, int(35 * dpi_scale))  # Increased for two lines
+        max_cell_width = max(120, int(120 * dpi_scale))
+        max_cell_height = max(60, int(60 * dpi_scale))
+        
+        optimal_cell_width = max(min_cell_width, min(max_cell_width, (self.width() - 150) // len(x_values)))
+        optimal_cell_height = max(min_cell_height, min(max_cell_height, (self.height() - 200) // len(y_values)))
         
         # Set headers with better formatting
         header_font = QFont("Arial", 9, QFont.Bold)
@@ -322,6 +340,13 @@ class SurfaceTableViewer(QWidget):
         if color.isValid():
             self.max_color = color
             self.max_color_btn.setStyleSheet(f"background-color: {color.name()}")
+            self.update_legend()
+    
+    def choose_medium_color(self):
+        color = QColorDialog.getColor(self.medium_color, self)
+        if color.isValid():
+            self.medium_color = color
+            self.medium_color_btn.setStyleSheet(f"background-color: {color.name()}")
             self.update_legend()
     
     def update_color_bias(self):
@@ -388,6 +413,9 @@ class SurfaceTableViewer(QWidget):
         # Enable/disable the difference type toggle based on comparison state
         if hasattr(self, 'diff_type_cb'):
             self.diff_type_cb.setEnabled(self.show_percentage_diff)
+        # Show/hide medium color button based on comparison mode
+        if hasattr(self, 'medium_color_btn'):
+            self.medium_color_btn.setVisible(self.show_percentage_diff)
         self.populate_table()
         self.update_legend()
     
@@ -429,9 +457,9 @@ class SurfaceTableViewer(QWidget):
         return QColor(r, g, b)
     
     def get_difference_color(self, difference, max_abs_difference):
-        """Get color for percentage difference (red for negative, green for positive)"""
+        """Get color for percentage difference using min/medium/max color scheme"""
         if max_abs_difference == 0:
-            return QColor(255, 255, 255)  # White for no difference
+            return self.medium_color  # Medium color for no difference
         
         # Clamp difference to range
         clamped_diff = max(-max_abs_difference, min(max_abs_difference, difference))
@@ -441,18 +469,20 @@ class SurfaceTableViewer(QWidget):
         ratio = ratio ** self.color_bias
         
         if clamped_diff < 0:
-            # Negative difference: white to red
-            r = int(255)
-            g = int(255 * (1 - ratio))
-            b = int(255 * (1 - ratio))
+            # Negative difference: interpolate between medium and min color
+            r = int(self.medium_color.red() + ratio * (self.min_color.red() - self.medium_color.red()))
+            g = int(self.medium_color.green() + ratio * (self.min_color.green() - self.medium_color.green()))
+            b = int(self.medium_color.blue() + ratio * (self.min_color.blue() - self.medium_color.blue()))
         elif clamped_diff > 0:
-            # Positive difference: white to green
-            r = int(255 * (1 - ratio))
-            g = int(255)
-            b = int(255 * (1 - ratio))
+            # Positive difference: interpolate between medium and max color
+            r = int(self.medium_color.red() + ratio * (self.max_color.red() - self.medium_color.red()))
+            g = int(self.medium_color.green() + ratio * (self.max_color.green() - self.medium_color.green()))
+            b = int(self.medium_color.blue() + ratio * (self.max_color.blue() - self.medium_color.blue()))
         else:
-            # Zero difference: white
-            r = g = b = 255
+            # Zero difference: medium color
+            r = self.medium_color.red()
+            g = self.medium_color.green()
+            b = self.medium_color.blue()
         
         return QColor(r, g, b)
     
@@ -538,8 +568,13 @@ class SurfaceTableViewer(QWidget):
                 item = QTableWidgetItem(text)
                 item.setTextAlignment(Qt.AlignCenter)
                 
-                # Enhanced text formatting
-                font = QFont("Arial", 8)
+                # Enhanced text formatting with DPI awareness
+                app = QApplication.instance()
+                screen = app.primaryScreen()
+                dpi_scale = screen.logicalDotsPerInch() / 96.0
+                font_size = max(7, int(8 * dpi_scale))  # Scale font size with DPI
+                
+                font = QFont("Arial", font_size)
                 if not np.isnan(z_val):
                     font.setBold(True)
                 item.setFont(font)
@@ -558,7 +593,11 @@ class SurfaceTableViewer(QWidget):
                     item.setToolTip(tooltip)
                 
                 # Set color based on data
-                if display_data is not None:
+                if np.isnan(z_val):
+                    # N/A cells should always be white
+                    item.setBackground(QColor(255, 255, 255))
+                    item.setForeground(QColor('black'))
+                elif display_data is not None:
                     if self.show_comparison and self.show_percentage_diff:
                         # Use different color scheme for differences
                         color = self.get_difference_color(data_val, max_percentage)
@@ -678,8 +717,17 @@ class SurfaceTableViewer(QWidget):
     def on_table_resize(self, event):
         """Handle table resize for dynamic column adjustment"""
         if hasattr(self, 'x_values') and len(self.x_values) > 0:
+            # Get DPI scaling factor
+            app = QApplication.instance()
+            screen = app.primaryScreen()
+            dpi_scale = screen.logicalDotsPerInch() / 96.0
+            
+            # Adjust min/max widths for DPI
+            min_width = max(60, int(60 * dpi_scale))
+            max_width = max(120, int(120 * dpi_scale))
+            
             available_width = self.table.width() - 100  # Account for ETASP column and scrollbar
-            optimal_cell_width = max(50, min(120, available_width // len(self.x_values)))
+            optimal_cell_width = max(min_width, min(max_width, available_width // len(self.x_values)))
             
             for i in range(1, len(self.x_values) + 1):
                 self.table.setColumnWidth(i, optimal_cell_width)

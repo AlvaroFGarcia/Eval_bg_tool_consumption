@@ -83,11 +83,9 @@ class SurfaceTableViewer(QWidget):
         self.show_percentage_diff = False
         self.use_absolute_diff = False  # Toggle between percentage and absolute difference
         
-        # Color settings
-        self.min_color = QColor(255, 255, 255)  # White for minimum
-        self.max_color = QColor(0, 100, 255)    # Blue for maximum
-        self.medium_color = QColor(255, 255, 255)  # White for medium (comparison mode)
-        self.color_bias = 1.0  # Linear bias
+        # Color settings - separate for normal and comparison modes
+        self.load_color_settings()  # Load saved color settings
+        self.current_mode = 'normal'  # Track current mode
         self.use_manual_range = False
         self.manual_min = 0.0
         self.manual_max = 100.0
@@ -327,12 +325,157 @@ class SurfaceTableViewer(QWidget):
         
         # Add resize event handler for dynamic adjustment
         self.table.resizeEvent = self.on_table_resize
+        
+        # Initialize color mode based on whether comparison data is shown initially
+        if self.show_comparison and self.show_percentage_diff:
+            self.apply_color_mode('comparison')
+        else:
+            self.apply_color_mode('normal')
+    
+    def load_color_settings(self):
+        """Load color settings from configuration file"""
+        # Default color settings for normal mode
+        self.normal_colors = {
+            'min_color': QColor(255, 255, 255),  # White for minimum
+            'max_color': QColor(0, 100, 255),    # Blue for maximum
+            'color_bias': 1.0
+        }
+        
+        # Default color settings for comparison mode
+        self.comparison_colors = {
+            'min_color': QColor(255, 0, 0),      # Red for minimum
+            'max_color': QColor(0, 255, 0),      # Green for maximum
+            'medium_color': QColor(255, 255, 255), # White for medium
+            'color_bias': 1.0
+        }
+        
+        # Try to load from config file
+        try:
+            if os.path.exists('fuel_config.json'):
+                with open('fuel_config.json', 'r') as f:
+                    config = json.load(f)
+                
+                # Load normal mode colors
+                if 'surface_viewer_normal_colors' in config:
+                    normal_config = config['surface_viewer_normal_colors']
+                    if 'min_color' in normal_config:
+                        self.normal_colors['min_color'] = QColor(normal_config['min_color'])
+                    if 'max_color' in normal_config:
+                        self.normal_colors['max_color'] = QColor(normal_config['max_color'])
+                    if 'color_bias' in normal_config:
+                        self.normal_colors['color_bias'] = normal_config['color_bias']
+                
+                # Load comparison mode colors
+                if 'surface_viewer_comparison_colors' in config:
+                    comp_config = config['surface_viewer_comparison_colors']
+                    if 'min_color' in comp_config:
+                        self.comparison_colors['min_color'] = QColor(comp_config['min_color'])
+                    if 'max_color' in comp_config:
+                        self.comparison_colors['max_color'] = QColor(comp_config['max_color'])
+                    if 'medium_color' in comp_config:
+                        self.comparison_colors['medium_color'] = QColor(comp_config['medium_color'])
+                    if 'color_bias' in comp_config:
+                        self.comparison_colors['color_bias'] = comp_config['color_bias']
+        except Exception as e:
+            print(f"Warning: Could not load color settings: {e}")
+        
+        # Set initial colors (normal mode)
+        self.apply_color_mode('normal')
+    
+    def apply_color_mode(self, mode):
+        """Apply color settings for the specified mode"""
+        self.current_mode = mode
+        
+        if mode == 'normal':
+            self.min_color = self.normal_colors['min_color']
+            self.max_color = self.normal_colors['max_color']
+            self.color_bias = self.normal_colors['color_bias']
+            # Medium color not used in normal mode, but set to white as default
+            self.medium_color = QColor(255, 255, 255)
+        else:  # comparison mode
+            self.min_color = self.comparison_colors['min_color']
+            self.max_color = self.comparison_colors['max_color']
+            self.medium_color = self.comparison_colors['medium_color']
+            self.color_bias = self.comparison_colors['color_bias']
+        
+        # Update UI elements
+        if hasattr(self, 'min_color_btn'):
+            self.min_color_btn.setStyleSheet(f"background-color: {self.min_color.name()}")
+        if hasattr(self, 'max_color_btn'):
+            self.max_color_btn.setStyleSheet(f"background-color: {self.max_color.name()}")
+        if hasattr(self, 'medium_color_btn'):
+            self.medium_color_btn.setStyleSheet(f"background-color: {self.medium_color.name()}")
+        
+        # Update bias slider
+        if hasattr(self, 'bias_slider'):
+            if self.color_bias <= 1.0:
+                slider_val = int(self.color_bias * 10)
+            elif self.color_bias <= 2.0:
+                slider_val = int(10 + (self.color_bias - 1.0) * 10)
+            else:
+                slider_val = int(20 + (self.color_bias - 2.0) * 10)
+            self.bias_slider.setValue(slider_val)
+            self.update_bias_label()
+        
+        # Update table and legend
+        if hasattr(self, 'table'):
+            self.populate_table()
+            self.update_legend()
+    
+    def save_color_settings(self):
+        """Save current color settings to configuration file"""
+        try:
+            # Load existing config
+            config = {}
+            if os.path.exists('fuel_config.json'):
+                with open('fuel_config.json', 'r') as f:
+                    config = json.load(f)
+            
+            # Save current mode colors
+            if self.current_mode == 'normal':
+                config['surface_viewer_normal_colors'] = {
+                    'min_color': self.min_color.name(),
+                    'max_color': self.max_color.name(),
+                    'color_bias': self.color_bias
+                }
+            else:  # comparison mode
+                config['surface_viewer_comparison_colors'] = {
+                    'min_color': self.min_color.name(),
+                    'max_color': self.max_color.name(),
+                    'medium_color': self.medium_color.name(),
+                    'color_bias': self.color_bias
+                }
+            
+            # Write config back
+            with open('fuel_config.json', 'w') as f:
+                json.dump(config, f, indent=2)
+        except Exception as e:
+            print(f"Warning: Could not save color settings: {e}")
+    
+    def update_bias_label(self):
+        """Update the bias label text"""
+        if hasattr(self, 'bias_value_label'):
+            if self.color_bias <= 1.0:
+                bias_text = f"{self.color_bias:.1f} (Low bias)"
+            elif self.color_bias == 1.0:
+                bias_text = f"{self.color_bias:.1f} (Linear)"
+            elif self.color_bias <= 2.0:
+                bias_text = f"{self.color_bias:.1f}"
+            else:
+                bias_text = f"{self.color_bias:.1f} (High bias)"
+            self.bias_value_label.setText(bias_text)
     
     def choose_min_color(self):
         color = QColorDialog.getColor(self.min_color, self)
         if color.isValid():
             self.min_color = color
             self.min_color_btn.setStyleSheet(f"background-color: {color.name()}")
+            # Update the appropriate color set
+            if self.current_mode == 'normal':
+                self.normal_colors['min_color'] = color
+            else:
+                self.comparison_colors['min_color'] = color
+            self.save_color_settings()
             self.update_legend()
     
     def choose_max_color(self):
@@ -340,6 +483,12 @@ class SurfaceTableViewer(QWidget):
         if color.isValid():
             self.max_color = color
             self.max_color_btn.setStyleSheet(f"background-color: {color.name()}")
+            # Update the appropriate color set
+            if self.current_mode == 'normal':
+                self.normal_colors['max_color'] = color
+            else:
+                self.comparison_colors['max_color'] = color
+            self.save_color_settings()
             self.update_legend()
     
     def choose_medium_color(self):
@@ -347,6 +496,9 @@ class SurfaceTableViewer(QWidget):
         if color.isValid():
             self.medium_color = color
             self.medium_color_btn.setStyleSheet(f"background-color: {color.name()}")
+            # Medium color is only used in comparison mode
+            self.comparison_colors['medium_color'] = color
+            self.save_color_settings()
             self.update_legend()
     
     def update_color_bias(self):
@@ -367,6 +519,13 @@ class SurfaceTableViewer(QWidget):
             bias_text = f"{self.color_bias:.1f} (High bias)"
         
         self.bias_value_label.setText(bias_text)
+        
+        # Update the appropriate color set bias
+        if self.current_mode == 'normal':
+            self.normal_colors['color_bias'] = self.color_bias
+        else:
+            self.comparison_colors['color_bias'] = self.color_bias
+        self.save_color_settings()
         self.update_legend()
     
     def toggle_manual_range(self):
@@ -416,6 +575,13 @@ class SurfaceTableViewer(QWidget):
         # Show/hide medium color button based on comparison mode
         if hasattr(self, 'medium_color_btn'):
             self.medium_color_btn.setVisible(self.show_percentage_diff)
+        
+        # Switch color modes based on comparison state
+        if self.show_percentage_diff:
+            self.apply_color_mode('comparison')
+        else:
+            self.apply_color_mode('normal')
+        
         self.populate_table()
         self.update_legend()
     

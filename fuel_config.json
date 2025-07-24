@@ -1,32 +1,25 @@
 {
-  "rpm_channel": "RPMX1",
-  "etasp_channel": "ETASP",
-<<<<<<< HEAD
-  "filters": [],
   "csv_columns": {
     "x_column": "RPM",
     "y_column": "ETASP",
     "z_column": "AVANCE_2",
-    "rpm_min": 1100.0,
+    "rpm_min": 1000.0,
     "rpm_max": 4000.0,
-    "rpm_intervals": 12,
+    "rpm_intervals": 16,
     "etasp_min": 0.3,
     "etasp_max": 2.1,
-    "etasp_intervals": 20
-=======
-  "z_param_channel": "",
+    "etasp_intervals": 16
+  },
+  "rpm_channel": "RPMX1",
+  "etasp_channel": "ETASP",
+  "z_param_channel": "CIGN_DANG_FDBK_V_[1]",
   "raster_value": 0.02,
-  "filters": [],
-  "csv_columns": {
-    "x_column": "",
-    "y_column": "",
-    "z_column": "",
-    "rpm_min": 0,
-    "rpm_max": 0,
-    "rpm_intervals": 0,
-    "etasp_min": 0,
-    "etasp_max": 0,
-    "etasp_intervals": 0
->>>>>>> 14f6d2e52acba1c1f33bc08a3dc9bb8142f6aefa
-  }
+  "filters": [
+    {
+      "channel": "PTC_PDL_POS",
+      "condition": "within range",
+      "min": 5.0,
+      "max": 102.0
+    }
+  ]
 }

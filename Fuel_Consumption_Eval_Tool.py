@@ -520,7 +520,7 @@ class SurfaceTableViewer(QWidget):
                     # Calculate differences for surface table comparison
                     if self.use_absolute_diff:
                         # Absolute difference = CSV - vehicle_log
-                        display_data = self.comparison_percentages - self.percentages
+                        display_data = (self.comparison_percentages - self.percentages)/2
                     else:
                         # Percentage difference = ((CSV - vehicle_log) / vehicle_log) * 100
                         with np.errstate(divide='ignore', invalid='ignore'):

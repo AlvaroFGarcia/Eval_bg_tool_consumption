@@ -1578,10 +1578,10 @@ def select_vehicle_parameters(mdf_file_paths, surface_data):
     button_frame = tk.Frame(main_frame)
     button_frame.pack(fill='x', pady=20)
     
-    def process_vehicle_analysis():
-        # Validate inputs
-        if not rpm_var.get() or not etasp_var.get() or not z_param_var.get():
-            messagebox.showerror('Error', 'Please select RPM, ETASP, and Z parameter channels')
+    def process_vehicle_points_against_csv():
+        # Validate inputs - only need RPM and ETASP for this option
+        if not rpm_var.get() or not etasp_var.get():
+            messagebox.showerror('Error', 'Please select RPM and ETASP channels')
             return
         
         try:
@@ -1599,11 +1599,11 @@ def select_vehicle_parameters(mdf_file_paths, surface_data):
             # Close window
             params_window.destroy()
             
-            # Open second vehicle bundle selection
-            select_second_vehicle_bundle_for_comparison(
-                mdf_file_paths, surface_data,
-                rpm_var.get(), etasp_var.get(), z_param_var.get(),
-                raster_var.get(), filters
+            # Process files and show surface table viewer (similar to confirm flow)
+            process_files_and_show_results(
+                surface_data, raster_var.get(), 
+                rpm_var.get(), etasp_var.get(), 
+                filters, mdf_file_paths
             )
             
         except Exception as e:
@@ -1640,88 +1640,10 @@ def select_vehicle_parameters(mdf_file_paths, surface_data):
         except Exception as e:
             messagebox.showerror('Error', f'Invalid parameters: {e}')
     
-    tk.Button(button_frame, text='Select Second Vehicle Bundle for Comparison', 
-              command=process_vehicle_analysis, bg='lightgreen', font=('TkDefaultFont', 10, 'bold')).pack(side='left', padx=10)
+    tk.Button(button_frame, text='Vehicle points of operations against CSV', 
+              command=process_vehicle_points_against_csv, bg='lightgreen', font=('TkDefaultFont', 10, 'bold')).pack(side='left', padx=10)
     tk.Button(button_frame, text='Create Surface Table from Vehicle Logs', 
               command=create_surface_from_vehicle, bg='lightblue', font=('TkDefaultFont', 10, 'bold')).pack(side='right', padx=10)
-
-def select_second_vehicle_bundle_for_comparison(first_bundle_paths, surface_data, rpm_channel, etasp_channel, z_param_channel, raster_value, filters):
-    """Select a second vehicle log bundle for comparison with the first bundle"""
-    
-    selection_window = tk.Toplevel()
-    selection_window.title('Select Second Vehicle Bundle for Comparison')
-    selection_window.geometry('600x400')
-    selection_window.grab_set()  # Make it modal
-    
-    tk.Label(selection_window, text='Select Second Vehicle Log Bundle for Comparison', font=('TkDefaultFont', 14, 'bold')).pack(pady=10)
-    tk.Label(selection_window, text=f'First bundle: {len(first_bundle_paths)} files selected', font=('TkDefaultFont', 10)).pack(pady=5)
-    
-    second_bundle_paths = []
-    
-    def select_second_bundle():
-        nonlocal second_bundle_paths
-        file_paths = filedialog.askopenfilenames(
-            title='Select Second Vehicle Log Bundle (MDF/MF4/DAT Files)',
-            filetypes=[
-                ('MDF Files', '*.mdf'),
-                ('MF4 Files', '*.mf4'),
-                ('DAT Files', '*.dat'),
-                ('All Supported', '*.mdf;*.mf4;*.dat'),
-                ('All Files', '*.*')
-            ]
-        )
-        if file_paths:
-            second_bundle_paths = list(file_paths)
-            lbl_second_bundle.config(text=f'Second bundle: {len(second_bundle_paths)} files selected')
-            btn_compare.config(state='normal')
-    
-    btn_select_second = tk.Button(selection_window, text='Select Second Vehicle Bundle', 
-                                  command=select_second_bundle, bg='lightblue')
-    btn_select_second.pack(pady=10)
-    
-    lbl_second_bundle = tk.Label(selection_window, text='No second bundle selected')
-    lbl_second_bundle.pack(pady=5)
-    
-    # Instructions
-    instructions_frame = tk.LabelFrame(selection_window, text='Instructions', padx=10, pady=10)
-    instructions_frame.pack(fill='x', padx=20, pady=20)
-    
-    tk.Label(instructions_frame, text='• Select a second set of vehicle log files to compare with the first set').pack(anchor='w')
-    tk.Label(instructions_frame, text='• Both bundles will be processed using the same CSV ranges for RPM and ETASP').pack(anchor='w') 
-    tk.Label(instructions_frame, text='• The comparison will show the difference between the two vehicle bundles').pack(anchor='w')
-    tk.Label(instructions_frame, text='• Both bundles will also be compared individually against the CSV surface table').pack(anchor='w')
-    
-    def perform_comparison():
-        if not second_bundle_paths:
-            messagebox.showerror('Error', 'Please select a second vehicle bundle!')
-            return
-        
-        try:
-            selection_window.destroy()
-            
-            # Process both bundles using CSV ranges and compare them
-            process_two_vehicle_bundles_comparison(
-                first_bundle_paths, second_bundle_paths, surface_data,
-                rpm_channel, etasp_channel, z_param_channel,
-                raster_value, filters
-            )
-            
-        except Exception as e:
-            messagebox.showerror('Error', f'Failed to perform comparison: {e}')
-    
-    # Buttons frame
-    buttons_frame = tk.Frame(selection_window)
-    buttons_frame.pack(pady=20)
-    
-    btn_compare = tk.Button(buttons_frame, text='Compare Vehicle Bundles', 
-                           command=perform_comparison, bg='lightgreen', 
-                           font=('TkDefaultFont', 10, 'bold'), state='disabled')
-    btn_compare.pack(side='left', padx=10)
-    
-    btn_cancel = tk.Button(buttons_frame, text='Cancel', 
-                          command=selection_window.destroy, bg='lightcoral')
-    btn_cancel.pack(side='right', padx=10)
-
 
 
 def load_surface_table(csv_file_path, x_col, y_col, z_col, rpm_min=None, rpm_max=None, rpm_intervals=None, etasp_min=None, etasp_max=None, etasp_intervals=None):

@@ -1,6 +1,7 @@
 {
   "rpm_channel": "RPMX1",
   "etasp_channel": "ETASP",
+<<<<<<< HEAD
   "filters": [],
   "csv_columns": {
     "x_column": "RPM",
@@ -12,5 +13,20 @@
     "etasp_min": 0.3,
     "etasp_max": 2.1,
     "etasp_intervals": 20
+=======
+  "z_param_channel": "",
+  "raster_value": 0.02,
+  "filters": [],
+  "csv_columns": {
+    "x_column": "",
+    "y_column": "",
+    "z_column": "",
+    "rpm_min": 0,
+    "rpm_max": 0,
+    "rpm_intervals": 0,
+    "etasp_min": 0,
+    "etasp_max": 0,
+    "etasp_intervals": 0
+>>>>>>> 14f6d2e52acba1c1f33bc08a3dc9bb8142f6aefa
   }
 }

@@ -47,8 +47,26 @@ def seconds_to_hms(seconds):
 class SurfaceTableViewer(QWidget):
     def __init__(self, surface_data, x_values, y_values, z_values, percentages=None, total_points_inside=0, total_points_all=0, comparison_percentages=None, comparison_name="Comparison"):
         super().__init__()
-        self.setWindowTitle('Surface Table Viewer')
-        self.resize(1600, 1000)
+        self.setWindowTitle('Surface Table Viewer - Enhanced Dynamic View')
+        
+        # Dynamic sizing based on data dimensions and screen size
+        app = QApplication.instance()
+        screen = app.primaryScreen().geometry()
+        
+        # Calculate optimal size based on data dimensions
+        min_cell_width = 60
+        min_cell_height = 25
+        header_height = 120  # Space for controls
+        
+        optimal_width = min(screen.width() * 0.95, len(x_values) * min_cell_width + 200)
+        optimal_height = min(screen.height() * 0.9, len(y_values) * min_cell_height + header_height + 100)
+        
+        self.resize(int(optimal_width), int(optimal_height))
+        
+        # Center window on screen
+        x = (screen.width() - optimal_width) // 2
+        y = (screen.height() - optimal_height) // 2
+        self.move(int(x), int(y))
         
         self.x_values = x_values
         self.y_values = y_values
@@ -238,27 +256,59 @@ class SurfaceTableViewer(QWidget):
         
         main_layout.addLayout(controls_and_legend_layout)
 
-        # Create table widget
+        # Create table widget with enhanced features
         self.table = QTableWidget()
         self.table.setRowCount(len(y_values) + 1)  # +1 for header
         self.table.setColumnCount(len(x_values) + 1)  # +1 for header
         
-        # Set headers
-        self.table.setItem(0, 0, QTableWidgetItem('RPM\\ETASP'))
+        # Enable sorting and other features
+        self.table.setSortingEnabled(False)  # Disable sorting to maintain spatial layout
+        self.table.setAlternatingRowColors(True)
+        self.table.setSelectionBehavior(QTableWidget.SelectItems)
+        
+        # Dynamic column sizing
+        optimal_cell_width = max(50, min(100, (self.width() - 150) // len(x_values)))
+        optimal_cell_height = max(20, min(40, (self.height() - 200) // len(y_values)))
+        
+        # Set headers with better formatting
+        header_font = QFont("Arial", 9, QFont.Bold)
+        corner_item = QTableWidgetItem('RPM \\ ETASP')
+        corner_item.setFont(header_font)
+        corner_item.setTextAlignment(Qt.AlignCenter)
+        self.table.setItem(0, 0, corner_item)
+        
+        # RPM headers (horizontal)
         for i, x_val in enumerate(x_values):
             header_item = QTableWidgetItem(f'{x_val:.0f}')
-            header_item.setFont(QFont("Arial", 10, QFont.Bold))
+            header_item.setFont(header_font)
+            header_item.setTextAlignment(Qt.AlignCenter)
             self.table.setItem(0, i + 1, header_item)
+            self.table.setColumnWidth(i + 1, optimal_cell_width)
+        
+        # ETASP headers (vertical)  
         for i, y_val in enumerate(y_values):
             header_item = QTableWidgetItem(f'{y_val:.3f}')
-            header_item.setFont(QFont("Arial", 10, QFont.Bold))
+            header_item.setFont(header_font)
+            header_item.setTextAlignment(Qt.AlignCenter)
             self.table.setItem(i + 1, 0, header_item)
+            self.table.setRowHeight(i + 1, optimal_cell_height)
+        
+        # Set header row and column widths
+        self.table.setColumnWidth(0, 80)  # ETASP column
+        self.table.setRowHeight(0, 30)    # Header row
+        
+        # Enable horizontal scroll bar when needed
+        self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.table.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         
         # Populate table
         self.populate_table()
         
         main_layout.addWidget(self.table)
         self.setLayout(main_layout)
+        
+        # Add resize event handler for dynamic adjustment
+        self.table.resizeEvent = self.on_table_resize
     
     def choose_min_color(self):
         color = QColorDialog.getColor(self.min_color, self)
@@ -488,6 +538,25 @@ class SurfaceTableViewer(QWidget):
                 item = QTableWidgetItem(text)
                 item.setTextAlignment(Qt.AlignCenter)
                 
+                # Enhanced text formatting
+                font = QFont("Arial", 8)
+                if not np.isnan(z_val):
+                    font.setBold(True)
+                item.setFont(font)
+                
+                # Add tooltip with detailed information
+                if display_data is not None:
+                    data_val = display_data[i, j]
+                    tooltip = f"RPM: {x_val:.0f}\nETASP: {y_val:.3f}\nZ Value: {z_val:.3f}"
+                    if self.show_comparison and self.show_percentage_diff:
+                        if self.use_absolute_diff:
+                            tooltip += f"\nDifference: {data_val:+.3f}"
+                        else:
+                            tooltip += f"\nDifference: {data_val:+.2f}%"
+                    else:
+                        tooltip += f"\nPercentage: {data_val:.2f}%"
+                    item.setToolTip(tooltip)
+                
                 # Set color based on data
                 if display_data is not None:
                     if self.show_comparison and self.show_percentage_diff:
@@ -605,6 +674,15 @@ class SurfaceTableViewer(QWidget):
                     item.setForeground(QColor('black'))
                 
                 self.legend_table.setItem(0, i, item)
+    
+    def on_table_resize(self, event):
+        """Handle table resize for dynamic column adjustment"""
+        if hasattr(self, 'x_values') and len(self.x_values) > 0:
+            available_width = self.table.width() - 100  # Account for ETASP column and scrollbar
+            optimal_cell_width = max(50, min(120, available_width // len(self.x_values)))
+            
+            for i in range(1, len(self.x_values) + 1):
+                self.table.setColumnWidth(i, optimal_cell_width)
     
     def closeEvent(self, event):
         """Handle window close event properly"""
@@ -1443,16 +1521,16 @@ def select_vehicle_parameters(mdf_file_paths, surface_data):
         except:
             pass
     
-    # Variables for channels
+    # Variables for channels - now includes Z parameter from config
     rpm_var = tk.StringVar(value=config.get('rpm_channel', ''))
     etasp_var = tk.StringVar(value=config.get('etasp_channel', ''))
-    z_param_var = tk.StringVar()
+    z_param_var = tk.StringVar(value=config.get('z_param_channel', ''))  # Load saved Z parameter
     
     # Grid intervals (use CSV dimensions)
     rpm_intervals_var = tk.IntVar(value=len(csv_x_values) - 1)
     etasp_intervals_var = tk.IntVar(value=len(csv_y_values) - 1)
     
-    raster_var = tk.DoubleVar(value=0.02)
+    raster_var = tk.DoubleVar(value=config.get('raster_value', 0.02))  # Save raster value too
     
     # Create UI
     main_frame = tk.Frame(params_window)
@@ -1524,20 +1602,20 @@ def select_vehicle_parameters(mdf_file_paths, surface_data):
     # Filter management
     filter_entries = []
     
-    def add_filter():
+    def add_filter(saved_filter=None):
         filter_frame = tk.Frame(filters_scrollable_frame)
         filter_frame.pack(fill='x', pady=2)
         
         # Channel
         tk.Label(filter_frame, text='Channel:').pack(side='left')
-        channel_var = tk.StringVar()
+        channel_var = tk.StringVar(value=saved_filter.get('channel', '') if saved_filter else '')
         channel_cb = AutocompleteCombobox(filter_frame, textvariable=channel_var, width=20)
         channel_cb.set_completion_list(all_channels)
         channel_cb.pack(side='left', padx=2)
         
         # Condition
         tk.Label(filter_frame, text='Condition:').pack(side='left', padx=(5, 2))
-        condition_var = tk.StringVar(value='within range')
+        condition_var = tk.StringVar(value=saved_filter.get('condition', 'within range') if saved_filter else 'within range')
         condition_cb = ttk.Combobox(filter_frame, textvariable=condition_var, 
                                    values=['within range', 'outside range'], 
                                    width=12, state='readonly')
@@ -1545,12 +1623,12 @@ def select_vehicle_parameters(mdf_file_paths, surface_data):
         
         # Min/Max values
         tk.Label(filter_frame, text='Min:').pack(side='left', padx=(5, 2))
-        min_var = tk.DoubleVar()
+        min_var = tk.DoubleVar(value=saved_filter.get('min', 0.0) if saved_filter else 0.0)
         min_entry = tk.Entry(filter_frame, textvariable=min_var, width=8)
         min_entry.pack(side='left', padx=2)
         
         tk.Label(filter_frame, text='Max:').pack(side='left', padx=(5, 2))
-        max_var = tk.DoubleVar()
+        max_var = tk.DoubleVar(value=saved_filter.get('max', 0.0) if saved_filter else 0.0)
         max_entry = tk.Entry(filter_frame, textvariable=max_var, width=8)
         max_entry.pack(side='left', padx=2)
         
@@ -1571,8 +1649,49 @@ def select_vehicle_parameters(mdf_file_paths, surface_data):
         }
         filter_entries.append(filter_entry)
     
-    add_filter_btn = tk.Button(filters_frame, text='Add Filter', command=add_filter)
+    # Load saved filters from config
+    saved_filters = config.get('filters', [])
+    for saved_filter in saved_filters:
+        add_filter(saved_filter)
+    
+    add_filter_btn = tk.Button(filters_frame, text='Add Filter', command=lambda: add_filter())
     add_filter_btn.pack(pady=5)
+    
+    # Function to save configuration
+    def save_configuration():
+        # Collect filter configurations
+        filters = []
+        for filter_entry in filter_entries:
+            if filter_entry['channel_var'].get():
+                filters.append({
+                    'channel': filter_entry['channel_var'].get(),
+                    'condition': filter_entry['condition_var'].get(),
+                    'min': filter_entry['min_var'].get(),
+                    'max': filter_entry['max_var'].get()
+                })
+        
+        # Update config with current selections
+        current_config = {}
+        if os.path.exists('fuel_config.json'):
+            try:
+                with open('fuel_config.json', 'r') as f:
+                    current_config = json.load(f)
+            except:
+                current_config = {}
+        
+        current_config.update({
+            'rpm_channel': rpm_var.get(),
+            'etasp_channel': etasp_var.get(),
+            'z_param_channel': z_param_var.get(),  # Save Z parameter channel
+            'raster_value': raster_var.get(),  # Save raster value
+            'filters': filters  # Save filters setup
+        })
+        
+        try:
+            with open('fuel_config.json', 'w') as f:
+                json.dump(current_config, f, indent=2)
+        except Exception as e:
+            print(f"Warning: Could not save configuration: {e}")
     
     # Action buttons
     button_frame = tk.Frame(main_frame)
@@ -1585,6 +1704,9 @@ def select_vehicle_parameters(mdf_file_paths, surface_data):
             return
         
         try:
+            # Save configuration before processing
+            save_configuration()
+            
             # Collect filter configurations
             filters = []
             for filter_entry in filter_entries:
@@ -1616,6 +1738,9 @@ def select_vehicle_parameters(mdf_file_paths, surface_data):
             return
         
         try:
+            # Save configuration before processing
+            save_configuration()
+            
             # Collect filter configurations
             filters = []
             for filter_entry in filter_entries:
@@ -2162,77 +2287,6 @@ def process_vehicle_analysis_with_csv(mdf_file_paths, surface_data, rpm_channel,
     except Exception as e:
         messagebox.showerror('Error', f'Failed to process vehicle analysis: {e}')
 
-def process_two_vehicle_bundles_comparison(first_bundle_paths, second_bundle_paths, surface_data, rpm_channel, etasp_channel, z_param_channel, raster_value, filters):
-    """Process and compare two vehicle bundles using CSV ranges"""
-    
-    # Extract ranges from CSV surface data
-    csv_x_values, csv_y_values, csv_z_values = surface_data
-    rpm_min, rpm_max = float(csv_x_values.min()), float(csv_x_values.max())
-    etasp_min, etasp_max = float(csv_y_values.min()), float(csv_y_values.max())
-    
-    # Create grid using CSV ranges
-    x_values = csv_x_values
-    y_values = csv_y_values
-    
-    # Progress window
-    progress_window = tk.Toplevel()
-    progress_window.title('Processing Vehicle Bundles for Comparison')
-    progress_window.geometry('400x200')
-    progress_window.grab_set()
-    
-    progress_label = tk.Label(progress_window, text='Processing first bundle...')
-    progress_label.pack(pady=10)
-    
-    progress_var = tk.DoubleVar()
-    progress_bar = ttk.Progressbar(progress_window, variable=progress_var, maximum=2)
-    progress_bar.pack(pady=10, padx=20, fill='x')
-    
-    progress_window.update()
-    
-    try:
-        # Process first bundle
-        first_bundle_percentages = process_files(
-            surface_data,
-            first_bundle_paths,
-            rpm_channel,
-            etasp_channel,
-            raster_value,
-            filters,
-            z_param_channel
-        )
-        
-        progress_var.set(1)
-        progress_label.config(text='Processing second bundle...')
-        progress_window.update()
-        
-        # Process second bundle
-        second_bundle_percentages = process_files(
-            surface_data,
-            second_bundle_paths,
-            rpm_channel,
-            etasp_channel,
-            raster_value,
-            filters,
-            z_param_channel
-        )
-        
-        progress_var.set(2)
-        progress_window.destroy()
-        
-        # Show comparison with first bundle as main data and second bundle as comparison
-        show_surface_table(
-            surface_data,
-            x_values, y_values, first_bundle_percentages,
-            percentages=first_bundle_percentages,
-            total_points_inside=0,
-            total_points_all=0,
-            comparison_percentages=second_bundle_percentages,
-            comparison_name="Second Vehicle Bundle"
-        )
-        
-    except Exception as e:
-        progress_window.destroy()
-        messagebox.showerror('Error', f'Failed to process vehicle bundles: {e}')
 
 def process_surface_creation_with_csv_ranges(mdf_file_paths, surface_data, rpm_channel, etasp_channel, z_param_channel, raster_value, filters):
     """Create surface table from vehicle logs using CSV ranges"""

@@ -77,7 +77,7 @@ class ConcentrationOverlay(QWidget):
         self.update()
         
     def paintEvent(self, event):
-        """Paint the smooth concentration overlay"""
+        """Paint the concentration overlay"""
         if not self.surface_viewer.concentration_overlay_enabled or self.surface_viewer.original_percentages is None:
             return
             
@@ -97,8 +97,11 @@ class ConcentrationOverlay(QWidget):
         scroll_x = table.horizontalScrollBar().value()
         scroll_y = table.verticalScrollBar().value()
         
-        # Create interpolated gradient overlay
-        self.paint_interpolated_concentration(painter, header_width, header_height, scroll_x, scroll_y)
+        # Paint based on selected mode
+        if self.surface_viewer.concentration_mode == 'scatter':
+            self.paint_scatter_concentration(painter, header_width, header_height, scroll_x, scroll_y)
+        else:  # gradient mode
+            self.paint_interpolated_concentration(painter, header_width, header_height, scroll_x, scroll_y)
         
     def paint_interpolated_concentration(self, painter, header_width, header_height, scroll_x, scroll_y):
         """Paint smooth interpolated concentration overlay"""
@@ -169,6 +172,10 @@ class ConcentrationOverlay(QWidget):
             max_conc = np.nanmax(viewer.original_percentages) if not np.all(np.isnan(viewer.original_percentages)) else 1
             if max_conc > 0:
                 Z_norm = np.clip(Z / max_conc, 0, 1)
+                
+                # Apply intensity and gamma correction
+                Z_norm = Z_norm * viewer.concentration_intensity
+                Z_norm = np.power(np.clip(Z_norm, 0, 1), viewer.concentration_gamma)
             else:
                 Z_norm = np.zeros_like(Z)
             
@@ -234,6 +241,84 @@ class ConcentrationOverlay(QWidget):
                 gradient.setColorAt(1.0, transparent_color)
                 
                 painter.fillRect(x - radius, y - radius, 2*radius, 2*radius, QBrush(gradient))
+    
+    def paint_scatter_concentration(self, painter, header_width, header_height, scroll_x, scroll_y):
+        """Paint concentration overlay using scatter points"""
+        viewer = self.surface_viewer
+        table = self.parent_table
+        
+        # Get data dimensions
+        rows = len(viewer.y_values)
+        cols = len(viewer.x_values)
+        
+        if rows == 0 or cols == 0:
+            return
+        
+        # Get maximum concentration for normalization
+        max_conc = np.nanmax(viewer.original_percentages) if not np.all(np.isnan(viewer.original_percentages)) else 1
+        if max_conc <= 0:
+            return
+        
+        # Get concentration colors
+        min_color = viewer.concentration_colors['min_color']
+        max_color = viewer.concentration_colors['max_color']
+        
+        # For each cell with concentration data
+        for i in range(rows):
+            for j in range(cols):
+                # Get cell geometry
+                cell_x = header_width + sum(table.columnWidth(k+1) for k in range(j)) - scroll_x
+                cell_y = header_height + sum(table.rowHeight(k+1) for k in range(i)) - scroll_y
+                cell_width = table.columnWidth(j+1)
+                cell_height = table.rowHeight(i+1)
+                
+                # Get concentration value
+                conc_value = viewer.original_percentages[i, j] if not np.isnan(viewer.original_percentages[i, j]) else 0
+                if conc_value <= 0:
+                    continue
+                
+                # Normalize concentration value
+                normalized_conc = min(1.0, conc_value / max_conc)
+                
+                # Apply intensity and gamma correction
+                normalized_conc = normalized_conc * viewer.concentration_intensity
+                normalized_conc = pow(min(1.0, normalized_conc), viewer.concentration_gamma)
+                
+                if normalized_conc <= 0:
+                    continue
+                
+                # Calculate number of scatter points based on concentration and density
+                base_points = max(1, int(normalized_conc * 20 * viewer.concentration_scatter_density))
+                
+                # Generate random points within the cell
+                import random
+                random.seed(hash((i, j)))  # Consistent seed for stable point positions
+                
+                for _ in range(base_points):
+                    # Random position within cell
+                    point_x = cell_x + random.random() * cell_width
+                    point_y = cell_y + random.random() * cell_height
+                    
+                    # Skip if point is outside visible area
+                    if point_x < 0 or point_y < 0 or point_x > self.width() or point_y > self.height():
+                        continue
+                    
+                    # Create color for this point
+                    color = self.interpolate_concentration_color(
+                        normalized_conc, min_color, max_color, viewer.concentration_transparency
+                    )
+                    
+                    if color.alpha() > 0:
+                        # Draw point
+                        painter.setPen(QPen(color, 0))
+                        painter.setBrush(QBrush(color))
+                        
+                        # Draw circle with size based on setting
+                        radius = viewer.concentration_scatter_size / 2
+                        painter.drawEllipse(
+                            QPoint(int(point_x), int(point_y)), 
+                            int(radius), int(radius)
+                        )
     
     def interpolate_concentration_color(self, normalized_value, min_color, max_color, transparency):
         """Interpolate concentration color"""
@@ -301,6 +386,14 @@ class SurfaceTableViewer(QWidget):
         self.concentration_overlay_enabled = True
         self.concentration_transparency = 0.5  # Default 50% transparency
         self.concentration_blur_enabled = True
+        
+        # Enhanced concentration overlay settings
+        self.concentration_mode = 'gradient'  # 'gradient' or 'scatter'
+        self.concentration_scatter_size = 5.0  # Scatter point size
+        self.concentration_scatter_density = 1.0  # Scatter point density
+        self.concentration_intensity = 1.0  # Overall intensity multiplier
+        self.concentration_gamma = 1.0  # Gamma correction for non-linear scaling
+        self.concentration_show_metrics = True  # Show concentration metrics
         
         # Store original percentages for concentration overlay
         self.original_percentages = percentages.copy() if percentages is not None else None
@@ -571,6 +664,10 @@ class SurfaceTableViewer(QWidget):
             self.apply_color_mode('comparison')
         else:
             self.apply_color_mode('normal')
+            
+        # Initialize concentration metrics
+        if hasattr(self, 'update_concentration_metrics'):
+            self.update_concentration_metrics()
     
     def load_color_settings(self):
         """Load color settings from configuration file"""
@@ -594,6 +691,14 @@ class SurfaceTableViewer(QWidget):
             'min_color': QColor(255, 255, 255, 0),    # Transparent for minimum
             'max_color': QColor(0, 100, 255, 200),    # Semi-transparent blue for maximum
         }
+        
+        # Enhanced concentration overlay defaults
+        self.concentration_mode = 'gradient'  # 'gradient' or 'scatter'
+        self.concentration_scatter_size = 5.0
+        self.concentration_scatter_density = 1.0
+        self.concentration_intensity = 1.0
+        self.concentration_gamma = 1.0
+        self.concentration_show_metrics = True
         
         # Try to load from config file
         try:
@@ -636,6 +741,20 @@ class SurfaceTableViewer(QWidget):
                         self.concentration_colors['min_color'] = QColor(conc_config['min_color'])
                     if 'max_color' in conc_config:
                         self.concentration_colors['max_color'] = QColor(conc_config['max_color'])
+                    
+                    # Load enhanced concentration settings
+                    if 'mode' in conc_config:
+                        self.concentration_mode = conc_config['mode']
+                    if 'scatter_size' in conc_config:
+                        self.concentration_scatter_size = conc_config['scatter_size']
+                    if 'scatter_density' in conc_config:
+                        self.concentration_scatter_density = conc_config['scatter_density']
+                    if 'intensity' in conc_config:
+                        self.concentration_intensity = conc_config['intensity']
+                    if 'gamma' in conc_config:
+                        self.concentration_gamma = conc_config['gamma']
+                    if 'show_metrics' in conc_config:
+                        self.concentration_show_metrics = conc_config['show_metrics']
         except Exception as e:
             print(f"Warning: Could not load color settings: {e}")
         
@@ -712,7 +831,13 @@ class SurfaceTableViewer(QWidget):
                 'transparency': self.concentration_transparency,
                 'blur_enabled': self.concentration_blur_enabled,
                 'min_color': self.concentration_colors['min_color'].name(),
-                'max_color': self.concentration_colors['max_color'].name()
+                'max_color': self.concentration_colors['max_color'].name(),
+                'mode': self.concentration_mode,
+                'scatter_size': self.concentration_scatter_size,
+                'scatter_density': self.concentration_scatter_density,
+                'intensity': self.concentration_intensity,
+                'gamma': self.concentration_gamma,
+                'show_metrics': self.concentration_show_metrics
             }
             
             # Write config back
@@ -722,48 +847,148 @@ class SurfaceTableViewer(QWidget):
             print(f"Warning: Could not save color settings: {e}")
     
     def create_concentration_controls(self, main_layout):
-        """Create concentration overlay controls"""
+        """Create enhanced concentration overlay controls"""
         conc_group = QGroupBox("Concentration Overlay")
-        conc_layout = QHBoxLayout()
+        conc_main_layout = QVBoxLayout()
         
-        # Enable/disable checkbox
+        # First row: Enable/disable and mode selection
+        conc_row1 = QHBoxLayout()
+        
         self.concentration_enabled_cb = QCheckBox("Enable Concentration Overlay")
         self.concentration_enabled_cb.setChecked(self.concentration_overlay_enabled)
         self.concentration_enabled_cb.stateChanged.connect(self.toggle_concentration_overlay)
-        conc_layout.addWidget(self.concentration_enabled_cb)
+        conc_row1.addWidget(self.concentration_enabled_cb)
+        
+        # Mode selection
+        conc_row1.addWidget(QLabel("Mode:"))
+        from PyQt5.QtWidgets import QComboBox
+        self.concentration_mode_combo = QComboBox()
+        self.concentration_mode_combo.addItems(["gradient", "scatter"])
+        self.concentration_mode_combo.setCurrentText(self.concentration_mode)
+        self.concentration_mode_combo.currentTextChanged.connect(self.update_concentration_mode)
+        conc_row1.addWidget(self.concentration_mode_combo)
+        
+        # Show metrics checkbox
+        self.concentration_metrics_cb = QCheckBox("Show Metrics")
+        self.concentration_metrics_cb.setChecked(self.concentration_show_metrics)
+        self.concentration_metrics_cb.stateChanged.connect(self.toggle_concentration_metrics)
+        conc_row1.addWidget(self.concentration_metrics_cb)
+        
+        conc_row1.addStretch()
+        conc_main_layout.addLayout(conc_row1)
+        
+        # Second row: Basic controls
+        conc_row2 = QHBoxLayout()
         
         # Transparency slider
-        conc_layout.addWidget(QLabel("Transparency:"))
+        conc_row2.addWidget(QLabel("Transparency:"))
         self.concentration_transparency_slider = QSlider(Qt.Horizontal)
         self.concentration_transparency_slider.setMinimum(0)
         self.concentration_transparency_slider.setMaximum(100)
         self.concentration_transparency_slider.setValue(int(self.concentration_transparency * 100))
         self.concentration_transparency_slider.valueChanged.connect(self.update_concentration_transparency)
-        conc_layout.addWidget(self.concentration_transparency_slider)
+        conc_row2.addWidget(self.concentration_transparency_slider)
         
         self.concentration_transparency_label = QLabel(f"{int(self.concentration_transparency * 100)}%")
-        conc_layout.addWidget(self.concentration_transparency_label)
+        conc_row2.addWidget(self.concentration_transparency_label)
         
-        # Blur toggle
+        # Intensity slider
+        conc_row2.addWidget(QLabel("Intensity:"))
+        self.concentration_intensity_slider = QSlider(Qt.Horizontal)
+        self.concentration_intensity_slider.setMinimum(10)
+        self.concentration_intensity_slider.setMaximum(300)
+        self.concentration_intensity_slider.setValue(int(self.concentration_intensity * 100))
+        self.concentration_intensity_slider.valueChanged.connect(self.update_concentration_intensity)
+        conc_row2.addWidget(self.concentration_intensity_slider)
+        
+        self.concentration_intensity_label = QLabel(f"{self.concentration_intensity:.1f}x")
+        conc_row2.addWidget(self.concentration_intensity_label)
+        
+        conc_main_layout.addLayout(conc_row2)
+        
+        # Third row: Advanced controls
+        conc_row3 = QHBoxLayout()
+        
+        # Gamma correction slider
+        conc_row3.addWidget(QLabel("Gamma:"))
+        self.concentration_gamma_slider = QSlider(Qt.Horizontal)
+        self.concentration_gamma_slider.setMinimum(10)
+        self.concentration_gamma_slider.setMaximum(300)
+        self.concentration_gamma_slider.setValue(int(self.concentration_gamma * 100))
+        self.concentration_gamma_slider.valueChanged.connect(self.update_concentration_gamma)
+        conc_row3.addWidget(self.concentration_gamma_slider)
+        
+        self.concentration_gamma_label = QLabel(f"{self.concentration_gamma:.1f}")
+        conc_row3.addWidget(self.concentration_gamma_label)
+        
+        # Blur toggle (for gradient mode)
         self.concentration_blur_cb = QCheckBox("Enable Blur")
         self.concentration_blur_cb.setChecked(self.concentration_blur_enabled)
         self.concentration_blur_cb.stateChanged.connect(self.toggle_concentration_blur)
-        conc_layout.addWidget(self.concentration_blur_cb)
+        conc_row3.addWidget(self.concentration_blur_cb)
+        
+        conc_main_layout.addLayout(conc_row3)
+        
+        # Fourth row: Scatter-specific controls
+        self.scatter_controls_row = QHBoxLayout()
+        
+        # Scatter size slider
+        self.scatter_controls_row.addWidget(QLabel("Point Size:"))
+        self.concentration_scatter_size_slider = QSlider(Qt.Horizontal)
+        self.concentration_scatter_size_slider.setMinimum(1)
+        self.concentration_scatter_size_slider.setMaximum(20)
+        self.concentration_scatter_size_slider.setValue(int(self.concentration_scatter_size))
+        self.concentration_scatter_size_slider.valueChanged.connect(self.update_concentration_scatter_size)
+        self.scatter_controls_row.addWidget(self.concentration_scatter_size_slider)
+        
+        self.concentration_scatter_size_label = QLabel(f"{self.concentration_scatter_size:.0f}px")
+        self.scatter_controls_row.addWidget(self.concentration_scatter_size_label)
+        
+        # Scatter density slider
+        self.scatter_controls_row.addWidget(QLabel("Density:"))
+        self.concentration_scatter_density_slider = QSlider(Qt.Horizontal)
+        self.concentration_scatter_density_slider.setMinimum(10)
+        self.concentration_scatter_density_slider.setMaximum(500)
+        self.concentration_scatter_density_slider.setValue(int(self.concentration_scatter_density * 100))
+        self.concentration_scatter_density_slider.valueChanged.connect(self.update_concentration_scatter_density)
+        self.scatter_controls_row.addWidget(self.concentration_scatter_density_slider)
+        
+        self.concentration_scatter_density_label = QLabel(f"{self.concentration_scatter_density:.1f}x")
+        self.scatter_controls_row.addWidget(self.concentration_scatter_density_label)
+        
+        self.scatter_controls_row.addStretch()
+        
+        # Create scatter controls widget and hide if in gradient mode
+        self.scatter_controls_widget = QWidget()
+        self.scatter_controls_widget.setLayout(self.scatter_controls_row)
+        conc_main_layout.addWidget(self.scatter_controls_widget)
+        
+        # Fifth row: Color selection and metrics
+        conc_row5 = QHBoxLayout()
         
         # Color selection buttons
         self.conc_min_color_btn = QPushButton("Min Color")
         self.conc_min_color_btn.setStyleSheet(f"background-color: {self.concentration_colors['min_color'].name()}")
         self.conc_min_color_btn.clicked.connect(self.choose_concentration_min_color)
-        conc_layout.addWidget(self.conc_min_color_btn)
+        conc_row5.addWidget(self.conc_min_color_btn)
         
         self.conc_max_color_btn = QPushButton("Max Color")
         self.conc_max_color_btn.setStyleSheet(f"background-color: {self.concentration_colors['max_color'].name()}")
         self.conc_max_color_btn.clicked.connect(self.choose_concentration_max_color)
-        conc_layout.addWidget(self.conc_max_color_btn)
+        conc_row5.addWidget(self.conc_max_color_btn)
         
-        conc_layout.addStretch()
-        conc_group.setLayout(conc_layout)
+        # Metrics display
+        self.concentration_metrics_label = QLabel("Metrics: Ready")
+        conc_row5.addWidget(self.concentration_metrics_label)
+        
+        conc_row5.addStretch()
+        conc_main_layout.addLayout(conc_row5)
+        
+        conc_group.setLayout(conc_main_layout)
         main_layout.addWidget(conc_group)
+        
+        # Update visibility based on current mode
+        self.update_concentration_controls_visibility()
     
     def toggle_concentration_overlay(self):
         """Toggle concentration overlay on/off"""
@@ -782,6 +1007,7 @@ class SurfaceTableViewer(QWidget):
         self.concentration_transparency_label.setText(f"{int(self.concentration_transparency * 100)}%")
         if self.concentration_overlay_widget:
             self.concentration_overlay_widget.update()
+        self.update_concentration_metrics()
         self.save_color_settings()
     
     def toggle_concentration_blur(self):
@@ -799,6 +1025,7 @@ class SurfaceTableViewer(QWidget):
             self.conc_min_color_btn.setStyleSheet(f"background-color: {color.name()}")
             if self.concentration_overlay_widget:
                 self.concentration_overlay_widget.update()
+            self.update_concentration_metrics()
             self.save_color_settings()
     
     def choose_concentration_max_color(self):
@@ -809,7 +1036,96 @@ class SurfaceTableViewer(QWidget):
             self.conc_max_color_btn.setStyleSheet(f"background-color: {color.name()}")
             if self.concentration_overlay_widget:
                 self.concentration_overlay_widget.update()
+            self.update_concentration_metrics()
             self.save_color_settings()
+    
+    def update_concentration_mode(self):
+        """Update concentration overlay mode"""
+        self.concentration_mode = self.concentration_mode_combo.currentText()
+        self.update_concentration_controls_visibility()
+        if self.concentration_overlay_widget:
+            self.concentration_overlay_widget.update()
+        self.save_color_settings()
+    
+    def update_concentration_controls_visibility(self):
+        """Update visibility of mode-specific controls"""
+        is_scatter = self.concentration_mode == 'scatter'
+        self.scatter_controls_widget.setVisible(is_scatter)
+        self.concentration_blur_cb.setVisible(not is_scatter)
+    
+    def toggle_concentration_metrics(self):
+        """Toggle concentration metrics display"""
+        self.concentration_show_metrics = self.concentration_metrics_cb.isChecked()
+        self.update_concentration_metrics()
+        self.save_color_settings()
+    
+    def update_concentration_intensity(self):
+        """Update concentration intensity from slider"""
+        self.concentration_intensity = self.concentration_intensity_slider.value() / 100.0
+        self.concentration_intensity_label.setText(f"{self.concentration_intensity:.1f}x")
+        if self.concentration_overlay_widget:
+            self.concentration_overlay_widget.update()
+        self.update_concentration_metrics()
+        self.save_color_settings()
+    
+    def update_concentration_gamma(self):
+        """Update concentration gamma correction from slider"""
+        self.concentration_gamma = self.concentration_gamma_slider.value() / 100.0
+        self.concentration_gamma_label.setText(f"{self.concentration_gamma:.1f}")
+        if self.concentration_overlay_widget:
+            self.concentration_overlay_widget.update()
+        self.save_color_settings()
+    
+    def update_concentration_scatter_size(self):
+        """Update scatter point size from slider"""
+        self.concentration_scatter_size = float(self.concentration_scatter_size_slider.value())
+        self.concentration_scatter_size_label.setText(f"{self.concentration_scatter_size:.0f}px")
+        if self.concentration_overlay_widget:
+            self.concentration_overlay_widget.update()
+        self.save_color_settings()
+    
+    def update_concentration_scatter_density(self):
+        """Update scatter point density from slider"""
+        self.concentration_scatter_density = self.concentration_scatter_density_slider.value() / 100.0
+        self.concentration_scatter_density_label.setText(f"{self.concentration_scatter_density:.1f}x")
+        if self.concentration_overlay_widget:
+            self.concentration_overlay_widget.update()
+        self.save_color_settings()
+    
+    def update_concentration_metrics(self):
+        """Update concentration metrics display"""
+        if not self.concentration_show_metrics or self.original_percentages is None:
+            self.concentration_metrics_label.setText("Metrics: Disabled")
+            return
+        
+        try:
+            # Calculate concentration statistics
+            valid_data = self.original_percentages[~np.isnan(self.original_percentages)]
+            if len(valid_data) == 0:
+                self.concentration_metrics_label.setText("Metrics: No valid data")
+                return
+            
+            max_concentration = np.max(valid_data)
+            mean_concentration = np.mean(valid_data)
+            total_time = np.sum(valid_data)
+            
+            # Convert to time units (assuming percentages represent time percentages)
+            # Estimate based on reasonable operating time ranges
+            if total_time > 0:
+                # Assuming a typical test duration of 1-8 hours
+                estimated_max_time_hours = max_concentration / 100.0 * 8  # Rough estimate
+                estimated_total_hours = total_time / 100.0 * 8
+                
+                self.concentration_metrics_label.setText(
+                    f"Max: {max_concentration:.1f}% (~{estimated_max_time_hours:.1f}h) | "
+                    f"Avg: {mean_concentration:.1f}% | "
+                    f"Total: {total_time:.1f}% (~{estimated_total_hours:.1f}h)"
+                )
+            else:
+                self.concentration_metrics_label.setText("Metrics: No concentration data")
+                
+        except Exception as e:
+            self.concentration_metrics_label.setText(f"Metrics: Error - {str(e)[:20]}...")
     
     def get_concentration_overlay_color(self, value, max_value):
         """Get concentration overlay color based on value"""
@@ -1203,6 +1519,10 @@ class SurfaceTableViewer(QWidget):
         # Re-enable updates and force refresh
         self.table.setUpdatesEnabled(True)
         self.table.viewport().update()
+        
+        # Update concentration metrics
+        if hasattr(self, 'update_concentration_metrics'):
+            self.update_concentration_metrics()
     
     def update_table_colors(self):
         """Update table colors with new color scheme"""

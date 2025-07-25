@@ -25,16 +25,227 @@ from tkinter import ttk
 import json
 import sys
 from PyQt5.QtWidgets import QApplication, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget, QHBoxLayout, QLabel, QPushButton, QColorDialog, QSlider, QCheckBox, QDoubleSpinBox, QGroupBox
-from PyQt5.QtGui import QColor, QFont
-from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QColor, QFont, QPainter, QLinearGradient, QRadialGradient, QPen, QBrush
+from PyQt5.QtCore import Qt, QRect, QPoint
 import os
 from scipy.interpolate import griddata
+try:
+    from scipy.ndimage import gaussian_filter
+    SCIPY_NDIMAGE_AVAILABLE = True
+except ImportError:
+    SCIPY_NDIMAGE_AVAILABLE = False
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
 # Global list to keep references to SurfaceTableViewer instances
 _active_viewers = []
+
+class ConcentrationOverlay(QWidget):
+    """Custom overlay widget for smooth concentration visualization"""
+    
+    def __init__(self, parent_table, surface_viewer):
+        super().__init__(parent_table.viewport())
+        self.parent_table = parent_table
+        self.surface_viewer = surface_viewer
+        self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.setFixedSize(parent_table.viewport().size())
+        
+        # Connect to parent table signals to update position and size
+        parent_table.horizontalScrollBar().valueChanged.connect(self.update_position)
+        parent_table.verticalScrollBar().valueChanged.connect(self.update_position)
+        
+        # Store original resize event handler
+        self.original_resize_event = parent_table.viewport().resizeEvent
+        parent_table.viewport().resizeEvent = self.on_parent_resize
+        
+    def on_parent_resize(self, event):
+        """Handle parent viewport resize"""
+        # Call original resize event first
+        if self.original_resize_event:
+            self.original_resize_event(event)
+        else:
+            QWidget.resizeEvent(self.parent_table.viewport(), event)
+        
+        # Update overlay size
+        self.setFixedSize(self.parent_table.viewport().size())
+        self.update()
+        
+    def update_position(self):
+        """Update overlay position when table scrolls"""
+        self.update()
+        
+    def paintEvent(self, event):
+        """Paint the smooth concentration overlay"""
+        if not self.surface_viewer.concentration_overlay_enabled or self.surface_viewer.original_percentages is None:
+            return
+            
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        
+        # Get table geometry information
+        table = self.parent_table
+        row_count = len(self.surface_viewer.y_values)
+        col_count = len(self.surface_viewer.x_values)
+        
+        # Calculate cell dimensions and positions
+        header_width = table.columnWidth(0)
+        header_height = table.rowHeight(0)
+        
+        # Get visible area
+        scroll_x = table.horizontalScrollBar().value()
+        scroll_y = table.verticalScrollBar().value()
+        
+        # Create interpolated gradient overlay
+        self.paint_interpolated_concentration(painter, header_width, header_height, scroll_x, scroll_y)
+        
+    def paint_interpolated_concentration(self, painter, header_width, header_height, scroll_x, scroll_y):
+        """Paint smooth interpolated concentration overlay"""
+        viewer = self.surface_viewer
+        table = self.parent_table
+        
+        # Get data dimensions
+        rows = len(viewer.y_values)
+        cols = len(viewer.x_values)
+        
+        if rows == 0 or cols == 0:
+            return
+            
+        # Calculate cell positions and sizes
+        data_points = []
+        values = []
+        
+        for i in range(rows):
+            for j in range(cols):
+                # Get cell geometry
+                cell_x = header_width + sum(table.columnWidth(k+1) for k in range(j)) - scroll_x
+                cell_y = header_height + sum(table.rowHeight(k+1) for k in range(i)) - scroll_y
+                cell_width = table.columnWidth(j+1)
+                cell_height = table.rowHeight(i+1)
+                
+                # Get concentration value
+                conc_value = viewer.original_percentages[i, j] if not np.isnan(viewer.original_percentages[i, j]) else 0
+                
+                # Add center point of cell
+                center_x = cell_x + cell_width / 2
+                center_y = cell_y + cell_height / 2
+                
+                data_points.append((center_x, center_y))
+                values.append(conc_value)
+        
+        if not data_points:
+            return
+            
+        # Create a higher resolution grid for smooth interpolation
+        viewport_width = self.width()
+        viewport_height = self.height()
+        
+        # Create interpolation grid (higher resolution for smoothness)
+        grid_resolution = max(4, min(8, viewport_width // 50))  # Adaptive resolution
+        x_grid = np.linspace(0, viewport_width, viewport_width // grid_resolution)
+        y_grid = np.linspace(0, viewport_height, viewport_height // grid_resolution)
+        
+        # Convert data points to arrays
+        points = np.array(data_points)
+        values_array = np.array(values)
+        
+        if len(points) < 3:  # Need at least 3 points for interpolation
+            return
+            
+        # Create meshgrid for interpolation
+        X, Y = np.meshgrid(x_grid, y_grid)
+        
+        try:
+            # Interpolate concentration values
+            Z = griddata(points, values_array, (X, Y), method='cubic', fill_value=0)
+            
+            # Apply blur effect by smoothing the interpolated values
+            if viewer.concentration_blur_enabled and SCIPY_NDIMAGE_AVAILABLE:
+                sigma = max(1.0, grid_resolution / 4)  # Adaptive blur
+                Z = gaussian_filter(Z, sigma=sigma)
+            
+            # Normalize values
+            max_conc = np.nanmax(viewer.original_percentages) if not np.all(np.isnan(viewer.original_percentages)) else 1
+            if max_conc > 0:
+                Z_norm = np.clip(Z / max_conc, 0, 1)
+            else:
+                Z_norm = np.zeros_like(Z)
+            
+            # Paint the interpolated surface
+            self.paint_gradient_surface(painter, X, Y, Z_norm, grid_resolution)
+            
+        except Exception as e:
+            # Fallback to simple radial gradients if interpolation fails
+            print(f"Interpolation failed, using fallback: {e}")
+            self.paint_radial_fallback(painter, data_points, values, max_conc)
+    
+    def paint_gradient_surface(self, painter, X, Y, Z_norm, grid_resolution):
+        """Paint the interpolated surface using simple rectangles for better performance"""
+        viewer = self.surface_viewer
+        
+        # Get concentration colors
+        min_color = viewer.concentration_colors['min_color']
+        max_color = viewer.concentration_colors['max_color']
+        
+        height, width = Z_norm.shape
+        
+        # Paint using simple filled rectangles for performance
+        for i in range(height - 1):
+            for j in range(width - 1):
+                # Get rectangle coordinates
+                x1, y1 = int(X[i, j]), int(Y[i, j])
+                x2, y2 = int(X[i+1, j+1]), int(Y[i+1, j+1])
+                
+                if x2 <= x1 or y2 <= y1:
+                    continue
+                
+                # Get average concentration for this cell
+                avg_conc = Z_norm[i, j]
+                
+                # Create color for this concentration level
+                color = self.interpolate_concentration_color(avg_conc, min_color, max_color, viewer.concentration_transparency)
+                
+                if color.alpha() > 0:
+                    painter.fillRect(x1, y1, x2-x1, y2-y1, color)
+    
+    def paint_radial_fallback(self, painter, data_points, values, max_conc):
+        """Fallback method using radial gradients"""
+        viewer = self.surface_viewer
+        min_color = viewer.concentration_colors['min_color']
+        max_color = viewer.concentration_colors['max_color']
+        
+        for (x, y), value in zip(data_points, values):
+            if value <= 0:
+                continue
+                
+            normalized_val = min(1.0, value / max_conc) if max_conc > 0 else 0
+            color = self.interpolate_concentration_color(normalized_val, min_color, max_color, viewer.concentration_transparency)
+            
+            if color.alpha() > 0:
+                # Create radial gradient
+                radius = 30 * normalized_val  # Scale radius with concentration
+                gradient = QRadialGradient(x, y, radius)
+                gradient.setColorAt(0.0, color)
+                
+                # Fade to transparent at edges
+                transparent_color = QColor(color)
+                transparent_color.setAlpha(0)
+                gradient.setColorAt(1.0, transparent_color)
+                
+                painter.fillRect(x - radius, y - radius, 2*radius, 2*radius, QBrush(gradient))
+    
+    def interpolate_concentration_color(self, normalized_value, min_color, max_color, transparency):
+        """Interpolate concentration color"""
+        # Apply transparency based on slider setting
+        alpha = int(normalized_value * 255 * transparency)
+        
+        # Interpolate RGB values
+        r = int(min_color.red() + (max_color.red() - min_color.red()) * normalized_value)
+        g = int(min_color.green() + (max_color.green() - min_color.green()) * normalized_value)
+        b = int(min_color.blue() + (max_color.blue() - min_color.blue()) * normalized_value)
+        
+        return QColor(r, g, b, alpha)
 
 def seconds_to_hms(seconds):
     """Convert seconds to HH:MM:SS.mmm format"""
@@ -93,6 +304,9 @@ class SurfaceTableViewer(QWidget):
         
         # Store original percentages for concentration overlay
         self.original_percentages = percentages.copy() if percentages is not None else None
+        
+        # Overlay widget for smooth concentration visualization
+        self.concentration_overlay_widget = None
         
         # Color settings - separate for normal and comparison modes
         self.load_color_settings()  # Load saved color settings
@@ -348,6 +562,10 @@ class SurfaceTableViewer(QWidget):
         self.table.setVerticalScrollMode(QAbstractItemView.ScrollPerItem)
         self.table.setHorizontalScrollMode(QAbstractItemView.ScrollPerItem)
         
+        # Create concentration overlay widget
+        self.concentration_overlay_widget = ConcentrationOverlay(self.table, self)
+        self.concentration_overlay_widget.show()
+        
         # Initialize color mode based on whether comparison data is shown initially
         if self.show_comparison and self.show_percentage_diff:
             self.apply_color_mode('comparison')
@@ -550,20 +768,27 @@ class SurfaceTableViewer(QWidget):
     def toggle_concentration_overlay(self):
         """Toggle concentration overlay on/off"""
         self.concentration_overlay_enabled = self.concentration_enabled_cb.isChecked()
-        self.update_table_colors()
+        if self.concentration_overlay_widget:
+            if self.concentration_overlay_enabled:
+                self.concentration_overlay_widget.show()
+            else:
+                self.concentration_overlay_widget.hide()
+            self.concentration_overlay_widget.update()
         self.save_color_settings()
     
     def update_concentration_transparency(self):
         """Update concentration transparency from slider"""
         self.concentration_transparency = self.concentration_transparency_slider.value() / 100.0
         self.concentration_transparency_label.setText(f"{int(self.concentration_transparency * 100)}%")
-        self.update_table_colors()
+        if self.concentration_overlay_widget:
+            self.concentration_overlay_widget.update()
         self.save_color_settings()
     
     def toggle_concentration_blur(self):
         """Toggle concentration blur on/off"""
         self.concentration_blur_enabled = self.concentration_blur_cb.isChecked()
-        self.update_table_colors()
+        if self.concentration_overlay_widget:
+            self.concentration_overlay_widget.update()
         self.save_color_settings()
     
     def choose_concentration_min_color(self):
@@ -572,7 +797,8 @@ class SurfaceTableViewer(QWidget):
         if color.isValid():
             self.concentration_colors['min_color'] = color
             self.conc_min_color_btn.setStyleSheet(f"background-color: {color.name()}")
-            self.update_table_colors()
+            if self.concentration_overlay_widget:
+                self.concentration_overlay_widget.update()
             self.save_color_settings()
     
     def choose_concentration_max_color(self):
@@ -581,7 +807,8 @@ class SurfaceTableViewer(QWidget):
         if color.isValid():
             self.concentration_colors['max_color'] = color
             self.conc_max_color_btn.setStyleSheet(f"background-color: {color.name()}")
-            self.update_table_colors()
+            if self.concentration_overlay_widget:
+                self.concentration_overlay_widget.update()
             self.save_color_settings()
     
     def get_concentration_overlay_color(self, value, max_value):
@@ -736,6 +963,8 @@ class SurfaceTableViewer(QWidget):
         
         self.populate_table()
         self.update_legend()
+        if self.concentration_overlay_widget:
+            self.concentration_overlay_widget.update()
         if hasattr(self, 'concentration_canvas'):
             self.update_concentration_plot()
     
@@ -757,6 +986,8 @@ class SurfaceTableViewer(QWidget):
         
         self.populate_table()
         self.update_legend()
+        if self.concentration_overlay_widget:
+            self.concentration_overlay_widget.update()
         if hasattr(self, 'concentration_canvas'):
             self.update_concentration_plot()
     
@@ -765,6 +996,8 @@ class SurfaceTableViewer(QWidget):
         self.use_absolute_diff = self.diff_type_cb.isChecked()
         self.populate_table()
         self.update_legend()
+        if self.concentration_overlay_widget:
+            self.concentration_overlay_widget.update()
         if hasattr(self, 'concentration_canvas'):
             self.update_concentration_plot()
     
@@ -955,26 +1188,7 @@ class SurfaceTableViewer(QWidget):
                         # Normal mode - use z_values for coloring
                         color = self.get_interpolated_color(z_val, np.nanmax(self.z_values))
                         
-                    # Apply concentration overlay if enabled and not in comparison diff mode
-                    if (self.concentration_overlay_enabled and 
-                        not (self.show_comparison and self.show_percentage_diff) and
-                        self.original_percentages is not None):
-                        
-                        # Get concentration value for this cell (always use original percentages)
-                        conc_value = self.original_percentages[i, j] if not np.isnan(self.original_percentages[i, j]) else 0
-                        max_conc = np.nanmax(self.original_percentages) if not np.all(np.isnan(self.original_percentages)) else 1
-                        
-                        # Get concentration overlay color
-                        overlay_color = self.get_concentration_overlay_color(conc_value, max_conc)
-                        
-                        # Blend base color with overlay
-                        if overlay_color.alpha() > 0:
-                            # Simple alpha blending
-                            alpha = overlay_color.alpha() / 255.0
-                            r = int(color.red() * (1 - alpha) + overlay_color.red() * alpha)
-                            g = int(color.green() * (1 - alpha) + overlay_color.green() * alpha)
-                            b = int(color.blue() * (1 - alpha) + overlay_color.blue() * alpha)
-                            color = QColor(r, g, b)
+                    # Note: Concentration overlay is now handled by the overlay widget
                     
                     item.setBackground(color)
                     
@@ -1096,6 +1310,11 @@ class SurfaceTableViewer(QWidget):
         try:
             # Call the original resize event first
             QTableWidget.resizeEvent(self.table, event)
+            
+            # Update overlay widget size
+            if self.concentration_overlay_widget:
+                self.concentration_overlay_widget.setFixedSize(self.table.viewport().size())
+                self.concentration_overlay_widget.update()
             
             if hasattr(self, 'x_values') and len(self.x_values) > 0:
                 # Get DPI scaling factor safely

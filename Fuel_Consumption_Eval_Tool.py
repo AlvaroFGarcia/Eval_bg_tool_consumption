@@ -86,6 +86,14 @@ class SurfaceTableViewer(QWidget):
         self.show_percentage_diff = False
         self.use_absolute_diff = False  # Toggle between percentage and absolute difference
         
+        # Concentration overlay settings - default to enabled for better visualization
+        self.concentration_overlay_enabled = True
+        self.concentration_transparency = 0.5  # Default 50% transparency
+        self.concentration_blur_enabled = True
+        
+        # Store original percentages for concentration overlay
+        self.original_percentages = percentages.copy() if percentages is not None else None
+        
         # Color settings - separate for normal and comparison modes
         self.load_color_settings()  # Load saved color settings
         self.current_mode = 'normal'  # Track current mode
@@ -265,8 +273,8 @@ class SurfaceTableViewer(QWidget):
         
         main_layout.addLayout(controls_and_legend_layout)
 
-        # Create concentration visualization above the table
-        self.create_concentration_plot(main_layout)
+        # Add concentration overlay controls
+        self.create_concentration_controls(main_layout)
 
         # Create table widget with enhanced features
         self.table = QTableWidget()
@@ -332,6 +340,14 @@ class SurfaceTableViewer(QWidget):
         # Add resize event handler for dynamic adjustment
         self.table.resizeEvent = self.on_table_resize
         
+        # Enable custom painting for concentration overlay and fix rendering issues
+        self.table.setMouseTracking(True)
+        
+        # Set viewport update mode to prevent cell disappearing during resize/scroll
+        from PyQt5.QtWidgets import QAbstractItemView
+        self.table.setVerticalScrollMode(QAbstractItemView.ScrollPerItem)
+        self.table.setHorizontalScrollMode(QAbstractItemView.ScrollPerItem)
+        
         # Initialize color mode based on whether comparison data is shown initially
         if self.show_comparison and self.show_percentage_diff:
             self.apply_color_mode('comparison')
@@ -353,6 +369,12 @@ class SurfaceTableViewer(QWidget):
             'max_color': QColor(0, 255, 0),      # Green for maximum
             'medium_color': QColor(255, 255, 255), # White for medium
             'color_bias': 1.0
+        }
+        
+        # Default concentration overlay colors
+        self.concentration_colors = {
+            'min_color': QColor(255, 255, 255, 0),    # Transparent for minimum
+            'max_color': QColor(0, 100, 255, 200),    # Semi-transparent blue for maximum
         }
         
         # Try to load from config file
@@ -382,6 +404,20 @@ class SurfaceTableViewer(QWidget):
                         self.comparison_colors['medium_color'] = QColor(comp_config['medium_color'])
                     if 'color_bias' in comp_config:
                         self.comparison_colors['color_bias'] = comp_config['color_bias']
+                
+                # Load concentration overlay settings
+                if 'concentration_overlay' in config:
+                    conc_config = config['concentration_overlay']
+                    if 'enabled' in conc_config:
+                        self.concentration_overlay_enabled = conc_config['enabled']
+                    if 'transparency' in conc_config:
+                        self.concentration_transparency = conc_config['transparency']
+                    if 'blur_enabled' in conc_config:
+                        self.concentration_blur_enabled = conc_config['blur_enabled']
+                    if 'min_color' in conc_config:
+                        self.concentration_colors['min_color'] = QColor(conc_config['min_color'])
+                    if 'max_color' in conc_config:
+                        self.concentration_colors['max_color'] = QColor(conc_config['max_color'])
         except Exception as e:
             print(f"Warning: Could not load color settings: {e}")
         
@@ -452,11 +488,128 @@ class SurfaceTableViewer(QWidget):
                     'color_bias': self.color_bias
                 }
             
+            # Save concentration overlay settings
+            config['concentration_overlay'] = {
+                'enabled': self.concentration_overlay_enabled,
+                'transparency': self.concentration_transparency,
+                'blur_enabled': self.concentration_blur_enabled,
+                'min_color': self.concentration_colors['min_color'].name(),
+                'max_color': self.concentration_colors['max_color'].name()
+            }
+            
             # Write config back
             with open('fuel_config.json', 'w') as f:
                 json.dump(config, f, indent=2)
         except Exception as e:
             print(f"Warning: Could not save color settings: {e}")
+    
+    def create_concentration_controls(self, main_layout):
+        """Create concentration overlay controls"""
+        conc_group = QGroupBox("Concentration Overlay")
+        conc_layout = QHBoxLayout()
+        
+        # Enable/disable checkbox
+        self.concentration_enabled_cb = QCheckBox("Enable Concentration Overlay")
+        self.concentration_enabled_cb.setChecked(self.concentration_overlay_enabled)
+        self.concentration_enabled_cb.stateChanged.connect(self.toggle_concentration_overlay)
+        conc_layout.addWidget(self.concentration_enabled_cb)
+        
+        # Transparency slider
+        conc_layout.addWidget(QLabel("Transparency:"))
+        self.concentration_transparency_slider = QSlider(Qt.Horizontal)
+        self.concentration_transparency_slider.setMinimum(0)
+        self.concentration_transparency_slider.setMaximum(100)
+        self.concentration_transparency_slider.setValue(int(self.concentration_transparency * 100))
+        self.concentration_transparency_slider.valueChanged.connect(self.update_concentration_transparency)
+        conc_layout.addWidget(self.concentration_transparency_slider)
+        
+        self.concentration_transparency_label = QLabel(f"{int(self.concentration_transparency * 100)}%")
+        conc_layout.addWidget(self.concentration_transparency_label)
+        
+        # Blur toggle
+        self.concentration_blur_cb = QCheckBox("Enable Blur")
+        self.concentration_blur_cb.setChecked(self.concentration_blur_enabled)
+        self.concentration_blur_cb.stateChanged.connect(self.toggle_concentration_blur)
+        conc_layout.addWidget(self.concentration_blur_cb)
+        
+        # Color selection buttons
+        self.conc_min_color_btn = QPushButton("Min Color")
+        self.conc_min_color_btn.setStyleSheet(f"background-color: {self.concentration_colors['min_color'].name()}")
+        self.conc_min_color_btn.clicked.connect(self.choose_concentration_min_color)
+        conc_layout.addWidget(self.conc_min_color_btn)
+        
+        self.conc_max_color_btn = QPushButton("Max Color")
+        self.conc_max_color_btn.setStyleSheet(f"background-color: {self.concentration_colors['max_color'].name()}")
+        self.conc_max_color_btn.clicked.connect(self.choose_concentration_max_color)
+        conc_layout.addWidget(self.conc_max_color_btn)
+        
+        conc_layout.addStretch()
+        conc_group.setLayout(conc_layout)
+        main_layout.addWidget(conc_group)
+    
+    def toggle_concentration_overlay(self):
+        """Toggle concentration overlay on/off"""
+        self.concentration_overlay_enabled = self.concentration_enabled_cb.isChecked()
+        self.update_table_colors()
+        self.save_color_settings()
+    
+    def update_concentration_transparency(self):
+        """Update concentration transparency from slider"""
+        self.concentration_transparency = self.concentration_transparency_slider.value() / 100.0
+        self.concentration_transparency_label.setText(f"{int(self.concentration_transparency * 100)}%")
+        self.update_table_colors()
+        self.save_color_settings()
+    
+    def toggle_concentration_blur(self):
+        """Toggle concentration blur on/off"""
+        self.concentration_blur_enabled = self.concentration_blur_cb.isChecked()
+        self.update_table_colors()
+        self.save_color_settings()
+    
+    def choose_concentration_min_color(self):
+        """Choose concentration minimum color"""
+        color = QColorDialog.getColor(self.concentration_colors['min_color'], self)
+        if color.isValid():
+            self.concentration_colors['min_color'] = color
+            self.conc_min_color_btn.setStyleSheet(f"background-color: {color.name()}")
+            self.update_table_colors()
+            self.save_color_settings()
+    
+    def choose_concentration_max_color(self):
+        """Choose concentration maximum color"""
+        color = QColorDialog.getColor(self.concentration_colors['max_color'], self)
+        if color.isValid():
+            self.concentration_colors['max_color'] = color
+            self.conc_max_color_btn.setStyleSheet(f"background-color: {color.name()}")
+            self.update_table_colors()
+            self.save_color_settings()
+    
+    def get_concentration_overlay_color(self, value, max_value):
+        """Get concentration overlay color based on value"""
+        if not self.concentration_overlay_enabled or max_value == 0:
+            return QColor(255, 255, 255, 0)  # Fully transparent
+        
+        # Normalize value to 0-1 range
+        normalized = min(1.0, max(0.0, value / max_value))
+        
+        # Interpolate between min and max colors
+        min_color = self.concentration_colors['min_color']
+        max_color = self.concentration_colors['max_color']
+        
+        # Apply transparency based on slider setting
+        alpha = int(normalized * 255 * self.concentration_transparency)
+        
+        # Apply blur effect by smoothing the value (simple smoothing)
+        if self.concentration_blur_enabled:
+            # Simple smoothing: reduce sharp transitions
+            normalized = normalized ** 0.7  # Soften the gradient
+        
+        # Interpolate RGB values
+        r = int(min_color.red() + (max_color.red() - min_color.red()) * normalized)
+        g = int(min_color.green() + (max_color.green() - min_color.green()) * normalized)
+        b = int(min_color.blue() + (max_color.blue() - min_color.blue()) * normalized)
+        
+        return QColor(r, g, b, alpha)
     
     def update_bias_label(self):
         """Update the bias label text"""
@@ -725,6 +878,9 @@ class SurfaceTableViewer(QWidget):
             if display_data is not None:
                 max_percentage = np.nanmax(display_data) if not np.all(np.isnan(display_data)) else 0
         
+        # Disable updates while populating to prevent flickering
+        self.table.setUpdatesEnabled(False)
+        
         for i, y_val in enumerate(self.y_values):
             for j, x_val in enumerate(self.x_values):
                 z_val = self.z_values[i, j]
@@ -787,12 +943,39 @@ class SurfaceTableViewer(QWidget):
                     # N/A cells should always be white
                     item.setBackground(QColor(255, 255, 255))
                     item.setForeground(QColor('black'))
-                elif display_data is not None:
+                else:
+                    # Get base color 
                     if self.show_comparison and self.show_percentage_diff:
-                        # Use different color scheme for differences
+                        # Use different color scheme for differences (no concentration overlay in comparison mode)
                         color = self.get_difference_color(data_val, max_percentage)
+                    elif display_data is not None:
+                        # Use display data for coloring (percentages, comparison without diff, etc.)
+                        color = self.get_interpolated_color(display_data[i, j], max_percentage)
                     else:
-                        color = self.get_interpolated_color(data_val, max_percentage)
+                        # Normal mode - use z_values for coloring
+                        color = self.get_interpolated_color(z_val, np.nanmax(self.z_values))
+                        
+                    # Apply concentration overlay if enabled and not in comparison diff mode
+                    if (self.concentration_overlay_enabled and 
+                        not (self.show_comparison and self.show_percentage_diff) and
+                        self.original_percentages is not None):
+                        
+                        # Get concentration value for this cell (always use original percentages)
+                        conc_value = self.original_percentages[i, j] if not np.isnan(self.original_percentages[i, j]) else 0
+                        max_conc = np.nanmax(self.original_percentages) if not np.all(np.isnan(self.original_percentages)) else 1
+                        
+                        # Get concentration overlay color
+                        overlay_color = self.get_concentration_overlay_color(conc_value, max_conc)
+                        
+                        # Blend base color with overlay
+                        if overlay_color.alpha() > 0:
+                            # Simple alpha blending
+                            alpha = overlay_color.alpha() / 255.0
+                            r = int(color.red() * (1 - alpha) + overlay_color.red() * alpha)
+                            g = int(color.green() * (1 - alpha) + overlay_color.green() * alpha)
+                            b = int(color.blue() * (1 - alpha) + overlay_color.blue() * alpha)
+                            color = QColor(r, g, b)
+                    
                     item.setBackground(color)
                     
                     # Set text color for better contrast
@@ -802,13 +985,15 @@ class SurfaceTableViewer(QWidget):
                         item.setForeground(QColor('black'))
                 
                 self.table.setItem(i + 1, j + 1, item)
+        
+        # Re-enable updates and force refresh
+        self.table.setUpdatesEnabled(True)
+        self.table.viewport().update()
     
     def update_table_colors(self):
         """Update table colors with new color scheme"""
         self.populate_table()
         self.update_legend()
-        if hasattr(self, 'concentration_canvas'):
-            self.update_concentration_plot()
     
     def update_legend(self):
         """Update the color legend based on current color settings"""
@@ -908,112 +1093,47 @@ class SurfaceTableViewer(QWidget):
     
     def on_table_resize(self, event):
         """Handle table resize for dynamic column adjustment"""
-        if hasattr(self, 'x_values') and len(self.x_values) > 0:
-            # Get DPI scaling factor
-            app = QApplication.instance()
-            screen = app.primaryScreen()
-            dpi_scale = screen.logicalDotsPerInch() / 96.0
+        try:
+            # Call the original resize event first
+            QTableWidget.resizeEvent(self.table, event)
             
-            # Adjust min/max widths for DPI
-            min_width = max(60, int(60 * dpi_scale))
-            max_width = max(120, int(120 * dpi_scale))
-            
-            available_width = self.table.width() - 100  # Account for ETASP column and scrollbar
-            optimal_cell_width = max(min_width, min(max_width, available_width // len(self.x_values)))
-            
-            for i in range(1, len(self.x_values) + 1):
-                self.table.setColumnWidth(i, optimal_cell_width)
-    
-    def create_concentration_plot(self, main_layout):
-        """Create concentration visualization plot above the table"""
-        # Create matplotlib figure and canvas
-        self.concentration_figure = Figure(figsize=(12, 4), dpi=100)
-        self.concentration_canvas = FigureCanvas(self.concentration_figure)
-        
-        # Add canvas to layout
-        main_layout.addWidget(self.concentration_canvas)
-        
-        # Initial plot creation
-        self.update_concentration_plot()
-    
-    def update_concentration_plot(self):
-        """Update the concentration plot based on current data"""
-        self.concentration_figure.clear()
-        
-        # Create subplot
-        ax = self.concentration_figure.add_subplot(111)
-        
-        # Check if we have data to plot
-        if not hasattr(self, 'x_values') or not hasattr(self, 'y_values') or not hasattr(self, 'z_values'):
-            ax.text(0.5, 0.5, 'No data available', ha='center', va='center', transform=ax.transAxes)
-            self.concentration_canvas.draw()
-            return
-        
-        # Determine what data to plot
-        if self.show_comparison and self.show_percentage_diff:
-            # Show difference plot
-            if self.percentages is not None and self.comparison_percentages is not None:
-                if self.use_absolute_diff:
-                    # Absolute difference = CSV - Vehicle Log
-                    plot_data = self.comparison_percentages - self.percentages
-                    plot_title = "Concentration Difference: CSV - Vehicle Log (Absolute)"
-                    colorbar_label = "Absolute Difference"
+            if hasattr(self, 'x_values') and len(self.x_values) > 0:
+                # Get DPI scaling factor safely
+                app = QApplication.instance()
+                if app and app.primaryScreen():
+                    screen = app.primaryScreen()
+                    dpi_scale = screen.logicalDotsPerInch() / 96.0
                 else:
-                    # Percentage difference = ((CSV - Vehicle Log) / Vehicle Log) * 100
-                    with np.errstate(divide='ignore', invalid='ignore'):
-                        plot_data = np.where(
-                            (self.percentages != 0) & ~np.isnan(self.percentages),
-                            ((self.comparison_percentages - self.percentages) / self.percentages) * 100,
-                            0
-                        )
-                    plot_title = "Concentration Difference: CSV vs Vehicle Log (%)"
-                    colorbar_label = "Percentage Difference (%)"
+                    dpi_scale = 1.0
                 
-                # Use symmetric colormap for differences (red-white-blue)
-                vmax = np.nanmax(np.abs(plot_data[np.isfinite(plot_data)])) if np.any(np.isfinite(plot_data)) else 1
-                vmin = -vmax
-                cmap = 'RdBu_r'  # Red for negative, blue for positive
-            else:
-                plot_data = np.zeros_like(self.z_values)
-                plot_title = "No comparison data available"
-                colorbar_label = "Value"
-                vmin, vmax = 0, 1
-                cmap = 'Blues'
-        else:
-            # Show main data (vehicle log percentages or CSV surface values)
-            if self.percentages is not None:
-                plot_data = self.percentages
-                plot_title = "Vehicle Log Concentration (Time % in each cell)"
-                colorbar_label = "Time Percentage (%)"
-            else:
-                plot_data = self.z_values
-                plot_title = "CSV Surface Table Values"
-                colorbar_label = "Surface Value"
-            
-            # Use blue colormap for main data
-            vmin = np.nanmin(plot_data[np.isfinite(plot_data)]) if np.any(np.isfinite(plot_data)) else 0
-            vmax = np.nanmax(plot_data[np.isfinite(plot_data)]) if np.any(np.isfinite(plot_data)) else 100
-            cmap = 'Blues'
-        
-        # Create the heatmap
-        im = ax.imshow(plot_data, extent=[self.x_values.min(), self.x_values.max(), 
-                                         self.y_values.min(), self.y_values.max()],
-                      origin='lower', aspect='auto', cmap=cmap, vmin=vmin, vmax=vmax, interpolation='bilinear')
-        
-        # Add colorbar
-        cbar = self.concentration_figure.colorbar(im, ax=ax, shrink=0.8)
-        cbar.set_label(colorbar_label, rotation=270, labelpad=20)
-        
-        # Set labels and title
-        ax.set_xlabel('RPM')
-        ax.set_ylabel('ETASP')
-        ax.set_title(plot_title)
-        
-        # Adjust layout
-        self.concentration_figure.tight_layout()
-        
-        # Refresh canvas
-        self.concentration_canvas.draw()
+                # Adjust min/max widths for DPI
+                min_width = max(60, int(60 * dpi_scale))
+                max_width = max(120, int(120 * dpi_scale))
+                
+                # Calculate available width more accurately
+                total_width = self.table.width()
+                etasp_column_width = self.table.columnWidth(0)
+                scrollbar_width = self.table.verticalScrollBar().width() if self.table.verticalScrollBar().isVisible() else 0
+                available_width = total_width - etasp_column_width - scrollbar_width - 20  # Extra margin
+                
+                if available_width > 0:
+                    optimal_cell_width = max(min_width, min(max_width, available_width // len(self.x_values)))
+                    
+                    # Batch update column widths to prevent flickering
+                    self.table.setUpdatesEnabled(False)
+                    for i in range(1, len(self.x_values) + 1):
+                        self.table.setColumnWidth(i, optimal_cell_width)
+                    self.table.setUpdatesEnabled(True)
+                
+                # Force a repaint to prevent cell disappearance
+                self.table.viewport().update()
+                
+        except Exception as e:
+            # Ensure updates are re-enabled in case of error
+            self.table.setUpdatesEnabled(True)
+            print(f"Warning: Error during table resize: {e}")
+    
+
     
     def closeEvent(self, event):
         """Handle window close event properly"""

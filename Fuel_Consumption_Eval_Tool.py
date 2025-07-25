@@ -29,6 +29,9 @@ from PyQt5.QtGui import QColor, QFont
 from PyQt5.QtCore import Qt
 import os
 from scipy.interpolate import griddata
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
 
 # Global list to keep references to SurfaceTableViewer instances
 _active_viewers = []
@@ -262,6 +265,9 @@ class SurfaceTableViewer(QWidget):
         
         main_layout.addLayout(controls_and_legend_layout)
 
+        # Create concentration visualization above the table
+        self.create_concentration_plot(main_layout)
+
         # Create table widget with enhanced features
         self.table = QTableWidget()
         self.table.setRowCount(len(y_values) + 1)  # +1 for header
@@ -477,6 +483,8 @@ class SurfaceTableViewer(QWidget):
                 self.comparison_colors['min_color'] = color
             self.save_color_settings()
             self.update_legend()
+            if hasattr(self, 'concentration_canvas'):
+                self.update_concentration_plot()
     
     def choose_max_color(self):
         color = QColorDialog.getColor(self.max_color, self)
@@ -490,6 +498,8 @@ class SurfaceTableViewer(QWidget):
                 self.comparison_colors['max_color'] = color
             self.save_color_settings()
             self.update_legend()
+            if hasattr(self, 'concentration_canvas'):
+                self.update_concentration_plot()
     
     def choose_medium_color(self):
         color = QColorDialog.getColor(self.medium_color, self)
@@ -500,6 +510,8 @@ class SurfaceTableViewer(QWidget):
             self.comparison_colors['medium_color'] = color
             self.save_color_settings()
             self.update_legend()
+            if hasattr(self, 'concentration_canvas'):
+                self.update_concentration_plot()
     
     def update_color_bias(self):
         """Update color bias from slider value"""
@@ -527,6 +539,8 @@ class SurfaceTableViewer(QWidget):
             self.comparison_colors['color_bias'] = self.color_bias
         self.save_color_settings()
         self.update_legend()
+        if hasattr(self, 'concentration_canvas'):
+            self.update_concentration_plot()
     
     def toggle_manual_range(self):
         """Toggle manual min/max range controls"""
@@ -540,12 +554,16 @@ class SurfaceTableViewer(QWidget):
             self.manual_max_spin.setValue(current_max)
         
         self.update_legend()
+        if hasattr(self, 'concentration_canvas'):
+            self.update_concentration_plot()
     
     def update_manual_range(self):
         """Update manual min/max values"""
         self.manual_min = self.manual_min_spin.value()
         self.manual_max = self.manual_max_spin.value()
         self.update_legend()
+        if hasattr(self, 'concentration_canvas'):
+            self.update_concentration_plot()
     
     def update_normalization(self):
         """Update percentage normalization"""
@@ -565,6 +583,8 @@ class SurfaceTableViewer(QWidget):
         
         self.populate_table()
         self.update_legend()
+        if hasattr(self, 'concentration_canvas'):
+            self.update_concentration_plot()
     
     def toggle_percentage_diff(self):
         """Toggle between showing main data and difference"""
@@ -584,12 +604,16 @@ class SurfaceTableViewer(QWidget):
         
         self.populate_table()
         self.update_legend()
+        if hasattr(self, 'concentration_canvas'):
+            self.update_concentration_plot()
     
     def toggle_diff_type(self):
         """Toggle between percentage and absolute difference"""
         self.use_absolute_diff = self.diff_type_cb.isChecked()
         self.populate_table()
         self.update_legend()
+        if hasattr(self, 'concentration_canvas'):
+            self.update_concentration_plot()
     
     def get_interpolated_color(self, percentage, max_percentage):
         """Get color based on percentage using interpolation between min and max colors with bias"""
@@ -783,6 +807,8 @@ class SurfaceTableViewer(QWidget):
         """Update table colors with new color scheme"""
         self.populate_table()
         self.update_legend()
+        if hasattr(self, 'concentration_canvas'):
+            self.update_concentration_plot()
     
     def update_legend(self):
         """Update the color legend based on current color settings"""
@@ -897,6 +923,97 @@ class SurfaceTableViewer(QWidget):
             
             for i in range(1, len(self.x_values) + 1):
                 self.table.setColumnWidth(i, optimal_cell_width)
+    
+    def create_concentration_plot(self, main_layout):
+        """Create concentration visualization plot above the table"""
+        # Create matplotlib figure and canvas
+        self.concentration_figure = Figure(figsize=(12, 4), dpi=100)
+        self.concentration_canvas = FigureCanvas(self.concentration_figure)
+        
+        # Add canvas to layout
+        main_layout.addWidget(self.concentration_canvas)
+        
+        # Initial plot creation
+        self.update_concentration_plot()
+    
+    def update_concentration_plot(self):
+        """Update the concentration plot based on current data"""
+        self.concentration_figure.clear()
+        
+        # Create subplot
+        ax = self.concentration_figure.add_subplot(111)
+        
+        # Check if we have data to plot
+        if not hasattr(self, 'x_values') or not hasattr(self, 'y_values') or not hasattr(self, 'z_values'):
+            ax.text(0.5, 0.5, 'No data available', ha='center', va='center', transform=ax.transAxes)
+            self.concentration_canvas.draw()
+            return
+        
+        # Determine what data to plot
+        if self.show_comparison and self.show_percentage_diff:
+            # Show difference plot
+            if self.percentages is not None and self.comparison_percentages is not None:
+                if self.use_absolute_diff:
+                    # Absolute difference = CSV - Vehicle Log
+                    plot_data = self.comparison_percentages - self.percentages
+                    plot_title = "Concentration Difference: CSV - Vehicle Log (Absolute)"
+                    colorbar_label = "Absolute Difference"
+                else:
+                    # Percentage difference = ((CSV - Vehicle Log) / Vehicle Log) * 100
+                    with np.errstate(divide='ignore', invalid='ignore'):
+                        plot_data = np.where(
+                            (self.percentages != 0) & ~np.isnan(self.percentages),
+                            ((self.comparison_percentages - self.percentages) / self.percentages) * 100,
+                            0
+                        )
+                    plot_title = "Concentration Difference: CSV vs Vehicle Log (%)"
+                    colorbar_label = "Percentage Difference (%)"
+                
+                # Use symmetric colormap for differences (red-white-blue)
+                vmax = np.nanmax(np.abs(plot_data[np.isfinite(plot_data)])) if np.any(np.isfinite(plot_data)) else 1
+                vmin = -vmax
+                cmap = 'RdBu_r'  # Red for negative, blue for positive
+            else:
+                plot_data = np.zeros_like(self.z_values)
+                plot_title = "No comparison data available"
+                colorbar_label = "Value"
+                vmin, vmax = 0, 1
+                cmap = 'Blues'
+        else:
+            # Show main data (vehicle log percentages or CSV surface values)
+            if self.percentages is not None:
+                plot_data = self.percentages
+                plot_title = "Vehicle Log Concentration (Time % in each cell)"
+                colorbar_label = "Time Percentage (%)"
+            else:
+                plot_data = self.z_values
+                plot_title = "CSV Surface Table Values"
+                colorbar_label = "Surface Value"
+            
+            # Use blue colormap for main data
+            vmin = np.nanmin(plot_data[np.isfinite(plot_data)]) if np.any(np.isfinite(plot_data)) else 0
+            vmax = np.nanmax(plot_data[np.isfinite(plot_data)]) if np.any(np.isfinite(plot_data)) else 100
+            cmap = 'Blues'
+        
+        # Create the heatmap
+        im = ax.imshow(plot_data, extent=[self.x_values.min(), self.x_values.max(), 
+                                         self.y_values.min(), self.y_values.max()],
+                      origin='lower', aspect='auto', cmap=cmap, vmin=vmin, vmax=vmax, interpolation='bilinear')
+        
+        # Add colorbar
+        cbar = self.concentration_figure.colorbar(im, ax=ax, shrink=0.8)
+        cbar.set_label(colorbar_label, rotation=270, labelpad=20)
+        
+        # Set labels and title
+        ax.set_xlabel('RPM')
+        ax.set_ylabel('ETASP')
+        ax.set_title(plot_title)
+        
+        # Adjust layout
+        self.concentration_figure.tight_layout()
+        
+        # Refresh canvas
+        self.concentration_canvas.draw()
     
     def closeEvent(self, event):
         """Handle window close event properly"""

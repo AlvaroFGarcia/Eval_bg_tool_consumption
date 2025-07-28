@@ -344,7 +344,7 @@ def seconds_to_hms(seconds):
     return f"{hours:02d}:{minutes:02d}:{secs:06.3f}"
 
 class SurfaceTableViewer(QWidget):
-    def __init__(self, surface_data, x_values, y_values, z_values, percentages=None, total_points_inside=0, total_points_all=0, comparison_percentages=None, comparison_name="Comparison"):
+    def __init__(self, surface_data, x_values, y_values, z_values, percentages=None, total_points_inside=0, total_points_all=0, comparison_percentages=None, comparison_name="Comparison", z_values_for_comparison=None):
         super().__init__()
         self.setWindowTitle('Surface Table Viewer - Enhanced Dynamic View')
         
@@ -381,6 +381,9 @@ class SurfaceTableViewer(QWidget):
         self.show_comparison = comparison_percentages is not None
         self.show_percentage_diff = False
         self.use_absolute_diff = False  # Toggle between percentage and absolute difference
+        
+        # Z values for comparison calculations (separate from concentration percentages)
+        self.z_values_for_comparison = z_values_for_comparison if z_values_for_comparison is not None else z_values
         
         # Concentration overlay settings - default to enabled for better visualization
         self.concentration_overlay_enabled = True
@@ -1385,26 +1388,26 @@ class SurfaceTableViewer(QWidget):
         
         if self.show_comparison and self.show_percentage_diff:
             # Show difference (percentage or absolute)
-            if self.percentages is not None and self.comparison_percentages is not None:
-                # Check if we're comparing surface table values (z_values) vs percentages
-                if np.array_equal(self.percentages, self.z_values):
-                    # We're comparing surface table values
+            if self.comparison_percentages is not None:
+                # Check if we have Z values for comparison (surface table mode)
+                if self.z_values_for_comparison is not None:
+                    # We're comparing surface table Z values
                     if self.use_absolute_diff:
-                        # Absolute difference = CSV - vehicle_log
-                        display_data = self.comparison_percentages - self.percentages
+                        # Absolute difference = CSV - vehicle_log (using Z values)
+                        display_data = self.comparison_percentages - self.z_values_for_comparison
                     else:
-                        # Percentage difference = ((CSV - vehicle_log) / vehicle_log) * 100
+                        # Percentage difference = ((CSV - vehicle_log) / vehicle_log) * 100 (using Z values)
                         with np.errstate(divide='ignore', invalid='ignore'):
                             display_data = np.where(
-                                (self.percentages != 0) & ~np.isnan(self.percentages),
-                                ((self.comparison_percentages - self.percentages) / self.percentages) * 100,
+                                (self.z_values_for_comparison != 0) & ~np.isnan(self.z_values_for_comparison),
+                                ((self.comparison_percentages - self.z_values_for_comparison) / self.z_values_for_comparison) * 100,
                                 0
                             )
                     # For surface table differences, use a reasonable range
                     max_abs_diff = np.nanmax(np.abs(display_data[np.isfinite(display_data)])) if np.any(np.isfinite(display_data)) else 10
                     max_percentage = max_abs_diff
-                else:
-                    # Regular percentage-based comparison
+                elif self.percentages is not None:
+                    # Regular percentage-based comparison (fallback for backwards compatibility)
                     if self.use_absolute_diff:
                         # Absolute difference for percentages = CSV - vehicle_log
                         display_data = self.comparison_percentages - self.percentages
@@ -1722,6 +1725,24 @@ class AutocompleteCombobox(ttk.Combobox):
             self.autocomplete()
 
 
+def show_surface_table(surface_data, x_values, y_values, z_values, percentages=None, total_points_inside=0, total_points_all=0, comparison_percentages=None, comparison_name="Comparison", z_values_for_comparison=None):
+    """Create and show a SurfaceTableViewer window"""
+    global _active_viewers
+    
+    viewer = SurfaceTableViewer(
+        surface_data, x_values, y_values, z_values, 
+        percentages=percentages,
+        total_points_inside=total_points_inside,
+        total_points_all=total_points_all,
+        comparison_percentages=comparison_percentages,
+        comparison_name=comparison_name,
+        z_values_for_comparison=z_values_for_comparison
+    )
+    
+    _active_viewers.append(viewer)
+    viewer.show()
+    return viewer
+
 
 def process_surface_creation_from_logs(mdf_file_paths, rpm_channel, etasp_channel, z_param_channel,
                                       rpm_params, etasp_params, raster_value, filters, csv_surface_data=None):
@@ -1964,7 +1985,8 @@ def show_surface_creation_results(x_values, y_values, z_averaged_matrix, count_m
             total_points_inside=total_data_points,
             total_points_all=total_data_points,
             comparison_percentages=comparison_percentages,
-            comparison_name=comparison_name
+            comparison_name=comparison_name,
+            z_values_for_comparison=z_averaged_matrix  # Pass Z values for comparison calculations
         )
     
     def export_surface_table():
@@ -2152,7 +2174,8 @@ def show_surface_comparison(x_values, y_values, surface1, surface2, name1, name2
         (x_values, y_values, surface1),
         x_values, y_values, surface1,
         comparison_percentages=surface2,
-        comparison_name=name2
+        comparison_name=name2,
+        z_values_for_comparison=surface1  # Use surface1 Z values for comparison calculations
     )
 
 def main():

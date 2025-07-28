@@ -9,7 +9,7 @@ The concentration overlay has been significantly enhanced with new visualization
 
 #### Gradient Mode (Default)
 - **Smooth interpolated surface**: Creates a lens-like effect that moves with X/Y table axes
-- **Not restricted to cell boundaries**: Uses interpolation to create smooth gradients across the table
+- **Not restricted to cell boundaries**: Uses interpolation to create smooth gradients across the tabless
 - **Blur effect**: Optional Gaussian blur for even smoother appearance
 - **High-resolution rendering**: Adaptive grid resolution for optimal performance
 

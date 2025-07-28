@@ -1,7 +1,5 @@
 # Concentration Overlay Improvements
 
-## Summary of Changes
-
 I have successfully implemented the requested improvements to the concentration overlay feature in your Fuel Consumption Evaluation Tool. Here are the key enhancements:
 
 ## 1. Enabled Concentration Overlay in Comparison Mode
@@ -9,67 +7,69 @@ I have successfully implemented the requested improvements to the concentration 
 **Previous Issue**: The concentration overlay was disabled when viewing comparison data (percentage differences between CSV and vehicle logs).
 
 **Solution**: Removed the restriction that disabled the overlay in comparison mode. Now the concentration overlay works in:
-- Normal surface table view
-- Comparison mode (showing differences)
-- All other viewing modes
+- Normal percentage view
+- CSV vs Vehicle log comparison mode
+- Difference view (both percentage and absolute)
 
-## 2. Glass-Like, Non-Cell-Restricted Overlay
+## 2. Enhanced Overlay Rendering with Smooth Gradient
 
 **Previous Issue**: The concentration overlay was restricted to individual table cells, creating a blocky appearance.
 
-**New Implementation**: 
-- Created a custom `ConcentrationOverlay` widget that renders on top of the table
-- Uses smooth interpolation between data points rather than cell-by-cell coloring
-- Creates a fluid, glass-like effect that flows across the entire table surface
-- The overlay is not restricted to cell boundaries - it creates smooth gradients
+**Solution**: Implemented advanced interpolation algorithms for smooth gradient rendering:
+- **Gradient Mode**: Creates smooth, interpolated concentration gradients across the entire table
+- **Scatter Mode**: Displays individual data points as colored circles with adjustable size and density
+- **Customizable Transparency**: Overlay transparency can be adjusted from 0% to 100%
+- **Blur Effects**: Optional blur for even smoother appearance
 
-## 3. Advanced Interpolation and Blur Effects
+## 3. Advanced Control Panel
 
-**Key Features**:
-- **Cubic Interpolation**: Uses scipy's `griddata` with cubic interpolation for smooth transitions
-- **Adaptive Resolution**: Automatically adjusts the overlay resolution based on viewport size
-- **Gaussian Blur**: Optional blur effect using `gaussian_filter` for softer gradients
-- **Real-time Updates**: The overlay updates dynamically when scrolling, resizing, or changing data
-
-## 4. Enhanced Color and Transparency Controls
-
-**Improvements**:
+**New Features Added**:
+- **Mode Selection**: Toggle between Gradient and Scatter overlay modes
+- **Transparency Control**: Real-time adjustment with visual feedback
+- **Blur Toggle**: Enable/disable blur effects for smoother gradients
+- **Scatter Controls**: Size and density adjustment for scatter mode
+- **Intensity & Gamma**: Fine-tune overlay appearance with intensity multiplier and gamma correction
+- **Metrics Display**: Optional concentration statistics overlay
 - Independent color controls for the concentration overlay
-- Adjustable transparency slider (0-100%)
-- Toggle for blur effects
-- Configurable min/max colors for the concentration gradient
-- Settings are saved and restored between sessions
 
-## 5. Performance Optimizations
+## 4. Enhanced Visual Experience
 
-**Technical Improvements**:
-- Efficient painting using Qt's native graphics system
-- Fallback to radial gradients if interpolation fails
-- Optimized update triggers only when necessary
-- Proper handling of scroll and resize events
+The concentration overlay now provides:
+- **Real-time Updates**: All changes apply immediately without requiring window refresh
+- **Preserved Functionality**: All existing features continue to work unchanged
+- **Better Performance**: Optimized rendering for smooth interaction
+- **Visual Feedback**: Slider values are displayed in real-time
 
-## 6. Fixed Cell Rendering Issues
+## 5. Configuration Persistence
 
-**Bug Fixes**:
-- Resolved issues with cells disappearing during scroll/resize
-- Improved table viewport update handling
-- Better event management for overlay positioning
-- Enhanced resize event handling
+All concentration overlay settings are automatically saved to `fuel_config.json`:
+- Overlay enabled/disabled state
+- Transparency level
+- Blur enabled state
+- Current mode (gradient/scatter)
+- Scatter size and density
+- Intensity and gamma values
+- Color scheme preferences
 
-## Usage
+## 6. Fixed Concentration Overlay for "Create Surface Table from Vehicle log"
 
-The concentration overlay now:
-1. **Works in all modes**: Normal view, comparison mode, and difference calculations
-2. **Flows smoothly**: Creates gradient effects that span across multiple cells
-3. **Updates dynamically**: Responds to all table interactions (scroll, resize, data changes)
-4. **Highly configurable**: Full control over colors, transparency, and blur effects
+**Previous Issue**: The concentration overlay and percentage values shown in the "Create Surface Table from Vehicle log" functionality displayed Z-values instead of actual data point concentration percentages, making the overlay and table percentages incorrect.
 
-## Controls
+**Solution**: Modified the `show_surface_creation_results` function to properly calculate concentration percentages from the point count matrix:
+- Calculate proper concentration percentages: `(count_matrix / total_data_points) * 100`
+- Pass these concentration percentages to the surface table viewer instead of Z-values
+- Now the concentration overlay correctly shows time concentration in each cell
+- Table percentage values now correctly show the percentage of time spent in each operating point
 
-- **Enable/Disable**: Checkbox to toggle the entire overlay
-- **Transparency**: Slider to adjust opacity (0-100%)
-- **Blur Effect**: Toggle for gaussian blur smoothing
-- **Colors**: Separate color pickers for minimum and maximum concentration values
-- **All settings persist**: Automatically saved to `fuel_config.json`
+This fix ensures that both the table display and concentration overlay show meaningful concentration data, just like the working "Vehicle points of operation against CSV" functionality.
+
+## How to Use
+
+1. Open any surface table viewer
+2. Check **Enable Concentration Overlay** checkbox
+3. Adjust **Transparency** slider to your preference
+4. Choose between **Gradient** and **Scatter** modes
+5. Fine-tune appearance with additional controls
+6. Toggle **Show Metrics** for concentration statistics
 
 The concentration overlay now provides a much more sophisticated and visually appealing way to visualize operating time concentration across your fuel consumption surface tables.

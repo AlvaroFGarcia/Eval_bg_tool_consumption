@@ -4,11 +4,11 @@
     "y_column": "ETASP",
     "z_column": "AVANCE_2",
     "rpm_min": 1100.0,
-    "rpm_max": 4000.0,
-    "rpm_intervals": 16,
-    "etasp_min": 0.23,
-    "etasp_max": 2.0,
-    "etasp_intervals": 16
+    "rpm_max": 3800.0,
+    "rpm_intervals": 20,
+    "etasp_min": 0.3,
+    "etasp_max": 1.8,
+    "etasp_intervals": 20
   },
   "rpm_channel": "RPMX1",
   "etasp_channel": "ETASP",
@@ -18,14 +18,44 @@
     {
       "channel": "PTC_PDL_POS",
       "condition": "within range",
-      "min": 5.0,
+      "min": 2.0,
       "max": 102.0
+    },
+    {
+      "channel": "ADVCOR_BASE",
+      "condition": "within range",
+      "min": -40.0,
+      "max": 40.0
+    },
+    {
+      "channel": "ANG_IVO",
+      "condition": "within range",
+      "min": 200.0,
+      "max": 400.0
     }
   ],
   "surface_viewer_comparison_colors": {
     "min_color": "#ff0000",
     "max_color": "#04ff00",
     "medium_color": "#ffffff",
+    "color_bias": 2.2
+  },
+  "surface_viewer_normal_colors": {
+    "min_color": "#ffffff",
+    "max_color": "#0064ff",
     "color_bias": 1.4
+  },
+  "concentration_overlay": {
+    "enabled": true,
+    "transparency": 0.32,
+    "blur_enabled": true,
+    "min_color": "#f8dcff",
+    "max_color": "#5500ff",
+    "mode": "gradient",
+    "scatter_size": 4.0,
+    "scatter_density": 1.55,
+    "intensity": 1.81,
+    "gamma": 0.83,
+    "show_metrics": false
   }
 }

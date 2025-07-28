@@ -1725,24 +1725,6 @@ class AutocompleteCombobox(ttk.Combobox):
             self.autocomplete()
 
 
-def show_surface_table(surface_data, x_values, y_values, z_values, percentages=None, total_points_inside=0, total_points_all=0, comparison_percentages=None, comparison_name="Comparison", z_values_for_comparison=None):
-    """Create and show a SurfaceTableViewer window"""
-    global _active_viewers
-    
-    viewer = SurfaceTableViewer(
-        surface_data, x_values, y_values, z_values, 
-        percentages=percentages,
-        total_points_inside=total_points_inside,
-        total_points_all=total_points_all,
-        comparison_percentages=comparison_percentages,
-        comparison_name=comparison_name,
-        z_values_for_comparison=z_values_for_comparison
-    )
-    
-    _active_viewers.append(viewer)
-    viewer.show()
-    return viewer
-
 
 def process_surface_creation_from_logs(mdf_file_paths, rpm_channel, etasp_channel, z_param_channel,
                                       rpm_params, etasp_params, raster_value, filters, csv_surface_data=None):
@@ -2883,7 +2865,7 @@ def load_surface_table(csv_file_path, x_col, y_col, z_col, rpm_min=None, rpm_max
     
     return np.array(x_unique), np.array(y_unique), Z_grid
 
-def show_surface_table(surface_data, x_values, y_values, z_values, percentages=None, total_points_inside=0, total_points_all=0, comparison_percentages=None, comparison_name="Comparison"):
+def show_surface_table(surface_data, x_values, y_values, z_values, percentages=None, total_points_inside=0, total_points_all=0, comparison_percentages=None, comparison_name="Comparison", z_values_for_comparison=None):
     """Show surface table in PyQt5 window"""
     global _active_viewers
     
@@ -2892,7 +2874,7 @@ def show_surface_table(surface_data, x_values, y_values, z_values, percentages=N
     if not app:
         app = QApplication(sys.argv)
     
-    viewer = SurfaceTableViewer(surface_data, x_values, y_values, z_values, percentages, total_points_inside, total_points_all, comparison_percentages, comparison_name)
+    viewer = SurfaceTableViewer(surface_data, x_values, y_values, z_values, percentages, total_points_inside, total_points_all, comparison_percentages, comparison_name, z_values_for_comparison)
     
     # Keep reference to prevent garbage collection
     _active_viewers.append(viewer)

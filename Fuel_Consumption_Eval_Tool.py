@@ -1930,6 +1930,11 @@ def show_surface_creation_results(x_values, y_values, z_averaged_matrix, count_m
         comparison_percentages = None
         comparison_name = "Comparison"
         
+        # Calculate proper concentration percentages from count matrix
+        concentration_percentages = np.zeros_like(count_matrix)
+        if total_data_points > 0:
+            concentration_percentages = (count_matrix / total_data_points) * 100
+        
         # If CSV surface data is available, prepare it for comparison
         if csv_surface_data is not None:
             try:
@@ -1955,7 +1960,7 @@ def show_surface_creation_results(x_values, y_values, z_averaged_matrix, count_m
         show_surface_table(
             (x_values, y_values, z_averaged_matrix),
             x_values, y_values, z_averaged_matrix,
-            percentages=z_averaged_matrix,  # Use Z values for comparison
+            percentages=concentration_percentages,  # Use proper concentration percentages
             total_points_inside=total_data_points,
             total_points_all=total_data_points,
             comparison_percentages=comparison_percentages,

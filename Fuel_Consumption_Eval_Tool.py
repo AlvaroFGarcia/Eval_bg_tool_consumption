@@ -42,7 +42,7 @@ from matplotlib.figure import Figure
 _active_viewers = []
 
 class ConcentrationOverlay(QWidget):
-    """Custom overlay widget for smooth concentration visualization - Performance Optimized"""
+    """Custom overlay widget for smooth concentration visualization"""
     
     def __init__(self, parent_table, surface_viewer):
         super().__init__(parent_table.viewport())
@@ -52,39 +52,13 @@ class ConcentrationOverlay(QWidget):
         self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.setFixedSize(parent_table.viewport().size())
         
-        # Performance optimization: Cache interpolated data
-        self._cached_interpolation = None
-        self._cache_valid = False
-        self._last_viewport_size = None
-        self._last_settings_hash = None
-        
-        # Optimization: Limit update frequency
-        self._update_timer = None
-        self._pending_update = False
-        
         # Connect to parent table signals to update position and size
-        parent_table.horizontalScrollBar().valueChanged.connect(self._schedule_update)
-        parent_table.verticalScrollBar().valueChanged.connect(self._schedule_update)
+        parent_table.horizontalScrollBar().valueChanged.connect(self.update_position)
+        parent_table.verticalScrollBar().valueChanged.connect(self.update_position)
         
         # Store original resize event handler
         self.original_resize_event = parent_table.viewport().resizeEvent
         parent_table.viewport().resizeEvent = self.on_parent_resize
-        
-    def _schedule_update(self):
-        """Schedule an update with debouncing to reduce excessive repaints"""
-        if self._update_timer is not None:
-            self._update_timer.stop()
-        
-        from PyQt5.QtCore import QTimer
-        self._update_timer = QTimer()
-        self._update_timer.setSingleShot(True)
-        self._update_timer.timeout.connect(self._perform_update)
-        self._update_timer.start(16)  # ~60fps max update rate
-        
-    def _perform_update(self):
-        """Perform the actual update"""
-        self.update()
-        self._update_timer = None
         
     def on_parent_resize(self, event):
         """Handle parent viewport resize"""
@@ -94,71 +68,43 @@ class ConcentrationOverlay(QWidget):
         else:
             QWidget.resizeEvent(self.parent_table.viewport(), event)
         
-        # Update overlay size and invalidate cache
-        new_size = self.parent_table.viewport().size()
-        self.setFixedSize(new_size)
-        
-        # Invalidate cache only if size actually changed
-        if self._last_viewport_size != (new_size.width(), new_size.height()):
-            self._cache_valid = False
-            self._last_viewport_size = (new_size.width(), new_size.height())
-        
-        self._schedule_update()
+        # Update overlay size
+        self.setFixedSize(self.parent_table.viewport().size())
+        self.update()
         
     def update_position(self):
         """Update overlay position when table scrolls"""
-        self._schedule_update()
-        
-    def _get_settings_hash(self):
-        """Get a hash of current settings to detect changes"""
-        viewer = self.surface_viewer
-        settings = (
-            viewer.concentration_overlay_enabled,
-            viewer.concentration_mode,
-            viewer.concentration_transparency,
-            viewer.concentration_intensity,
-            viewer.concentration_gamma,
-            viewer.concentration_blur_enabled,
-            viewer.concentration_scatter_size,
-            viewer.concentration_scatter_density,
-            str(viewer.concentration_colors['min_color'].name()),
-            str(viewer.concentration_colors['max_color'].name())
-        )
-        return hash(settings)
-        
-    def _invalidate_cache(self):
-        """Invalidate cached interpolation data"""
-        self._cache_valid = False
+        self.update()
         
     def paintEvent(self, event):
-        """Paint the concentration overlay with performance optimizations"""
+        """Paint the concentration overlay"""
         if not self.surface_viewer.concentration_overlay_enabled or self.surface_viewer.original_percentages is None:
             return
             
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing, False)  # Disable antialiasing for performance
+        painter.setRenderHint(QPainter.Antialiasing, True)
         
-        # Check if we need to recalculate the interpolation
-        current_settings_hash = self._get_settings_hash()
-        current_size = (self.width(), self.height())
+        # Get table geometry information
+        table = self.parent_table
+        row_count = len(self.surface_viewer.y_values)
+        col_count = len(self.surface_viewer.x_values)
         
-        if (not self._cache_valid or 
-            self._last_settings_hash != current_settings_hash or
-            self._last_viewport_size != current_size):
-            
-            self._recalculate_interpolation()
-            self._last_settings_hash = current_settings_hash
-            self._last_viewport_size = current_size
-            self._cache_valid = True
+        # Calculate cell dimensions and positions
+        header_width = table.columnWidth(0)
+        header_height = table.rowHeight(0)
         
-        # Paint based on selected mode using cached data
+        # Get visible area
+        scroll_x = table.horizontalScrollBar().value()
+        scroll_y = table.verticalScrollBar().value()
+        
+        # Paint based on selected mode
         if self.surface_viewer.concentration_mode == 'scatter':
-            self.paint_scatter_concentration_optimized(painter)
+            self.paint_scatter_concentration(painter, header_width, header_height, scroll_x, scroll_y)
         else:  # gradient mode
-            self.paint_interpolated_concentration_optimized(painter)
-    
-    def _recalculate_interpolation(self):
-        """Recalculate interpolation data and cache it"""
+            self.paint_interpolated_concentration(painter, header_width, header_height, scroll_x, scroll_y)
+        
+    def paint_interpolated_concentration(self, painter, header_width, header_height, scroll_x, scroll_y):
+        """Paint smooth interpolated concentration overlay"""
         viewer = self.surface_viewer
         table = self.parent_table
         
@@ -167,16 +113,9 @@ class ConcentrationOverlay(QWidget):
         cols = len(viewer.x_values)
         
         if rows == 0 or cols == 0:
-            self._cached_interpolation = None
             return
             
-        # Get table geometry information
-        header_width = table.columnWidth(0)
-        header_height = table.rowHeight(0)
-        scroll_x = table.horizontalScrollBar().value()
-        scroll_y = table.verticalScrollBar().value()
-        
-        # Calculate cell positions and concentration data
+        # Calculate cell positions and sizes
         data_points = []
         values = []
         
@@ -195,26 +134,128 @@ class ConcentrationOverlay(QWidget):
                 center_x = cell_x + cell_width / 2
                 center_y = cell_y + cell_height / 2
                 
-                data_points.append((center_x, center_y, cell_width, cell_height, conc_value))
-                if conc_value > 0:
-                    values.append(conc_value)
+                data_points.append((center_x, center_y))
+                values.append(conc_value)
         
-        # Cache the calculated data
-        self._cached_interpolation = {
-            'data_points': data_points,
-            'max_concentration': max(values) if values else 1.0,
-            'viewport_size': (self.width(), self.height())
-        }
-    
-    def paint_interpolated_concentration_optimized(self, painter):
-        """Paint smooth interpolated concentration overlay with optimizations"""
-        if not self._cached_interpolation:
+        if not data_points:
             return
             
-        viewer = self.surface_viewer
-        data_points = self._cached_interpolation['data_points']
-        max_conc = self._cached_interpolation['max_concentration']
+        # Create a higher resolution grid for smooth interpolation
+        viewport_width = self.width()
+        viewport_height = self.height()
         
+        # Create interpolation grid (higher resolution for smoothness)
+        grid_resolution = max(4, min(8, viewport_width // 50))  # Adaptive resolution
+        x_grid = np.linspace(0, viewport_width, viewport_width // grid_resolution)
+        y_grid = np.linspace(0, viewport_height, viewport_height // grid_resolution)
+        
+        # Convert data points to arrays
+        points = np.array(data_points)
+        values_array = np.array(values)
+        
+        if len(points) < 3:  # Need at least 3 points for interpolation
+            return
+            
+        # Create meshgrid for interpolation
+        X, Y = np.meshgrid(x_grid, y_grid)
+        
+        try:
+            # Interpolate concentration values
+            Z = griddata(points, values_array, (X, Y), method='cubic', fill_value=0)
+            
+            # Apply blur effect by smoothing the interpolated values
+            if viewer.concentration_blur_enabled and SCIPY_NDIMAGE_AVAILABLE:
+                sigma = max(1.0, grid_resolution / 4)  # Adaptive blur
+                Z = gaussian_filter(Z, sigma=sigma)
+            
+            # Normalize values
+            max_conc = np.nanmax(viewer.original_percentages) if not np.all(np.isnan(viewer.original_percentages)) else 1
+            if max_conc > 0:
+                Z_norm = np.clip(Z / max_conc, 0, 1)
+                
+                # Apply intensity and gamma correction
+                Z_norm = Z_norm * viewer.concentration_intensity
+                Z_norm = np.power(np.clip(Z_norm, 0, 1), viewer.concentration_gamma)
+            else:
+                Z_norm = np.zeros_like(Z)
+            
+            # Paint the interpolated surface
+            self.paint_gradient_surface(painter, X, Y, Z_norm, grid_resolution)
+            
+        except Exception as e:
+            # Fallback to simple radial gradients if interpolation fails
+            print(f"Interpolation failed, using fallback: {e}")
+            self.paint_radial_fallback(painter, data_points, values, max_conc)
+    
+    def paint_gradient_surface(self, painter, X, Y, Z_norm, grid_resolution):
+        """Paint the interpolated surface using simple rectangles for better performance"""
+        viewer = self.surface_viewer
+        
+        # Get concentration colors
+        min_color = viewer.concentration_colors['min_color']
+        max_color = viewer.concentration_colors['max_color']
+        
+        height, width = Z_norm.shape
+        
+        # Paint using simple filled rectangles for performance
+        for i in range(height - 1):
+            for j in range(width - 1):
+                # Get rectangle coordinates
+                x1, y1 = int(X[i, j]), int(Y[i, j])
+                x2, y2 = int(X[i+1, j+1]), int(Y[i+1, j+1])
+                
+                if x2 <= x1 or y2 <= y1:
+                    continue
+                
+                # Get average concentration for this cell
+                avg_conc = Z_norm[i, j]
+                
+                # Create color for this concentration level
+                color = self.interpolate_concentration_color(avg_conc, min_color, max_color, viewer.concentration_transparency)
+                
+                if color.alpha() > 0:
+                    painter.fillRect(x1, y1, x2-x1, y2-y1, color)
+    
+    def paint_radial_fallback(self, painter, data_points, values, max_conc):
+        """Fallback method using radial gradients"""
+        viewer = self.surface_viewer
+        min_color = viewer.concentration_colors['min_color']
+        max_color = viewer.concentration_colors['max_color']
+        
+        for (x, y), value in zip(data_points, values):
+            if value <= 0:
+                continue
+                
+            normalized_val = min(1.0, value / max_conc) if max_conc > 0 else 0
+            color = self.interpolate_concentration_color(normalized_val, min_color, max_color, viewer.concentration_transparency)
+            
+            if color.alpha() > 0:
+                # Create radial gradient
+                radius = 30 * normalized_val  # Scale radius with concentration
+                gradient = QRadialGradient(x, y, radius)
+                gradient.setColorAt(0.0, color)
+                
+                # Fade to transparent at edges
+                transparent_color = QColor(color)
+                transparent_color.setAlpha(0)
+                gradient.setColorAt(1.0, transparent_color)
+                
+                painter.fillRect(x - radius, y - radius, 2*radius, 2*radius, QBrush(gradient))
+    
+    def paint_scatter_concentration(self, painter, header_width, header_height, scroll_x, scroll_y):
+        """Paint concentration overlay using scatter points"""
+        viewer = self.surface_viewer
+        table = self.parent_table
+        
+        # Get data dimensions
+        rows = len(viewer.y_values)
+        cols = len(viewer.x_values)
+        
+        if rows == 0 or cols == 0:
+            return
+        
+        # Get maximum concentration for normalization
+        max_conc = np.nanmax(viewer.original_percentages) if not np.all(np.isnan(viewer.original_percentages)) else 1
         if max_conc <= 0:
             return
         
@@ -222,110 +263,65 @@ class ConcentrationOverlay(QWidget):
         min_color = viewer.concentration_colors['min_color']
         max_color = viewer.concentration_colors['max_color']
         
-        # Use simplified rectangle-based rendering for performance
-        for center_x, center_y, cell_width, cell_height, conc_value in data_points:
-            if conc_value <= 0:
-                continue
+        # For each cell with concentration data
+        for i in range(rows):
+            for j in range(cols):
+                # Get cell geometry
+                cell_x = header_width + sum(table.columnWidth(k+1) for k in range(j)) - scroll_x
+                cell_y = header_height + sum(table.rowHeight(k+1) for k in range(i)) - scroll_y
+                cell_width = table.columnWidth(j+1)
+                cell_height = table.rowHeight(i+1)
                 
-            # Skip cells outside visible area for performance
-            if (center_x < -cell_width or center_x > self.width() + cell_width or
-                center_y < -cell_height or center_y > self.height() + cell_height):
-                continue
+                # Get concentration value
+                conc_value = viewer.original_percentages[i, j] if not np.isnan(viewer.original_percentages[i, j]) else 0
+                if conc_value <= 0:
+                    continue
                 
-            # Normalize concentration value
-            normalized_conc = min(1.0, conc_value / max_conc)
-            
-            # Apply intensity and gamma correction
-            normalized_conc = normalized_conc * viewer.concentration_intensity
-            normalized_conc = pow(min(1.0, normalized_conc), viewer.concentration_gamma)
-            
-            if normalized_conc <= 0:
-                continue
-            
-            # Create color for this concentration level
-            color = self.interpolate_concentration_color(normalized_conc, min_color, max_color, viewer.concentration_transparency)
-            
-            if color.alpha() > 0:
-                # Simple rectangle fill for performance
-                rect_size = min(cell_width, cell_height) * 0.8  # Scale with cell size
-                rect_x = int(center_x - rect_size / 2)
-                rect_y = int(center_y - rect_size / 2)
+                # Normalize concentration value
+                normalized_conc = min(1.0, conc_value / max_conc)
                 
-                painter.fillRect(rect_x, rect_y, int(rect_size), int(rect_size), color)
-    
-    def paint_scatter_concentration_optimized(self, painter):
-        """Paint concentration overlay using scatter points with optimizations"""
-        if not self._cached_interpolation:
-            return
-            
-        viewer = self.surface_viewer
-        data_points = self._cached_interpolation['data_points']
-        max_conc = self._cached_interpolation['max_concentration']
-        
-        if max_conc <= 0:
-            return
-        
-        # Get concentration colors
-        min_color = viewer.concentration_colors['min_color']
-        max_color = viewer.concentration_colors['max_color']
-        
-        # Use a fixed random seed for consistent scatter patterns
-        import random
-        
-        for i, (center_x, center_y, cell_width, cell_height, conc_value) in enumerate(data_points):
-            if conc_value <= 0:
-                continue
-            
-            # Skip cells outside visible area for performance
-            if (center_x < -cell_width or center_x > self.width() + cell_width or
-                center_y < -cell_height or center_y > self.height() + cell_height):
-                continue
+                # Apply intensity and gamma correction
+                normalized_conc = normalized_conc * viewer.concentration_intensity
+                normalized_conc = pow(min(1.0, normalized_conc), viewer.concentration_gamma)
                 
-            # Normalize concentration value
-            normalized_conc = min(1.0, conc_value / max_conc)
-            
-            # Apply intensity and gamma correction
-            normalized_conc = normalized_conc * viewer.concentration_intensity
-            normalized_conc = pow(min(1.0, normalized_conc), viewer.concentration_gamma)
-            
-            if normalized_conc <= 0:
-                continue
-            
-            # Calculate number of scatter points (reduced for performance)
-            base_points = max(1, int(normalized_conc * 10 * viewer.concentration_scatter_density))
-            
-            # Generate scatter points with consistent seed
-            random.seed(hash((i, int(center_x), int(center_y))))  # Consistent seed
-            
-            # Create color for this point
-            color = self.interpolate_concentration_color(
-                normalized_conc, min_color, max_color, viewer.concentration_transparency
-            )
-            
-            if color.alpha() > 0:
-                painter.setPen(QPen(color, 0))
-                painter.setBrush(QBrush(color))
+                if normalized_conc <= 0:
+                    continue
                 
-                # Draw optimized scatter points
-                radius = viewer.concentration_scatter_size / 2
+                # Calculate number of scatter points based on concentration and density
+                base_points = max(1, int(normalized_conc * 20 * viewer.concentration_scatter_density))
                 
-                for _ in range(min(base_points, 15)):  # Limit max points per cell for performance
+                # Generate random points within the cell
+                import random
+                random.seed(hash((i, j)))  # Consistent seed for stable point positions
+                
+                for _ in range(base_points):
                     # Random position within cell
-                    point_x = center_x + (random.random() - 0.5) * cell_width * 0.8
-                    point_y = center_y + (random.random() - 0.5) * cell_height * 0.8
+                    point_x = cell_x + random.random() * cell_width
+                    point_y = cell_y + random.random() * cell_height
                     
                     # Skip if point is outside visible area
                     if point_x < 0 or point_y < 0 or point_x > self.width() or point_y > self.height():
                         continue
                     
-                    # Draw circle
-                    painter.drawEllipse(
-                        QPoint(int(point_x), int(point_y)), 
-                        int(radius), int(radius)
+                    # Create color for this point
+                    color = self.interpolate_concentration_color(
+                        normalized_conc, min_color, max_color, viewer.concentration_transparency
                     )
+                    
+                    if color.alpha() > 0:
+                        # Draw point
+                        painter.setPen(QPen(color, 0))
+                        painter.setBrush(QBrush(color))
+                        
+                        # Draw circle with size based on setting
+                        radius = viewer.concentration_scatter_size / 2
+                        painter.drawEllipse(
+                            QPoint(int(point_x), int(point_y)), 
+                            int(radius), int(radius)
+                        )
     
     def interpolate_concentration_color(self, normalized_value, min_color, max_color, transparency):
-        """Interpolate concentration color - same as before"""
+        """Interpolate concentration color"""
         # Apply transparency based on slider setting
         alpha = int(normalized_value * 255 * transparency)
         
@@ -1005,7 +1001,6 @@ class SurfaceTableViewer(QWidget):
                 self.concentration_overlay_widget.show()
             else:
                 self.concentration_overlay_widget.hide()
-            self.concentration_overlay_widget._invalidate_cache()
             self.concentration_overlay_widget.update()
         self.save_color_settings()
     
@@ -1014,7 +1009,6 @@ class SurfaceTableViewer(QWidget):
         self.concentration_transparency = self.concentration_transparency_slider.value() / 100.0
         self.concentration_transparency_label.setText(f"{int(self.concentration_transparency * 100)}%")
         if self.concentration_overlay_widget:
-            self.concentration_overlay_widget._invalidate_cache()
             self.concentration_overlay_widget.update()
         self.update_concentration_metrics()
         self.save_color_settings()
@@ -1023,7 +1017,6 @@ class SurfaceTableViewer(QWidget):
         """Toggle concentration blur on/off"""
         self.concentration_blur_enabled = self.concentration_blur_cb.isChecked()
         if self.concentration_overlay_widget:
-            self.concentration_overlay_widget._invalidate_cache()
             self.concentration_overlay_widget.update()
         self.save_color_settings()
     
@@ -1034,7 +1027,6 @@ class SurfaceTableViewer(QWidget):
             self.concentration_colors['min_color'] = color
             self.conc_min_color_btn.setStyleSheet(f"background-color: {color.name()}")
             if self.concentration_overlay_widget:
-                self.concentration_overlay_widget._invalidate_cache()
                 self.concentration_overlay_widget.update()
             self.update_concentration_metrics()
             self.save_color_settings()
@@ -1046,7 +1038,6 @@ class SurfaceTableViewer(QWidget):
             self.concentration_colors['max_color'] = color
             self.conc_max_color_btn.setStyleSheet(f"background-color: {color.name()}")
             if self.concentration_overlay_widget:
-                self.concentration_overlay_widget._invalidate_cache()
                 self.concentration_overlay_widget.update()
             self.update_concentration_metrics()
             self.save_color_settings()
@@ -1056,7 +1047,6 @@ class SurfaceTableViewer(QWidget):
         self.concentration_mode = self.concentration_mode_combo.currentText()
         self.update_concentration_controls_visibility()
         if self.concentration_overlay_widget:
-            self.concentration_overlay_widget._invalidate_cache()
             self.concentration_overlay_widget.update()
         self.save_color_settings()
     
@@ -1077,7 +1067,6 @@ class SurfaceTableViewer(QWidget):
         self.concentration_intensity = self.concentration_intensity_slider.value() / 100.0
         self.concentration_intensity_label.setText(f"{self.concentration_intensity:.1f}x")
         if self.concentration_overlay_widget:
-            self.concentration_overlay_widget._invalidate_cache()
             self.concentration_overlay_widget.update()
         self.update_concentration_metrics()
         self.save_color_settings()
@@ -1087,7 +1076,6 @@ class SurfaceTableViewer(QWidget):
         self.concentration_gamma = self.concentration_gamma_slider.value() / 100.0
         self.concentration_gamma_label.setText(f"{self.concentration_gamma:.1f}")
         if self.concentration_overlay_widget:
-            self.concentration_overlay_widget._invalidate_cache()
             self.concentration_overlay_widget.update()
         self.save_color_settings()
     
@@ -1096,7 +1084,6 @@ class SurfaceTableViewer(QWidget):
         self.concentration_scatter_size = float(self.concentration_scatter_size_slider.value())
         self.concentration_scatter_size_label.setText(f"{self.concentration_scatter_size:.0f}px")
         if self.concentration_overlay_widget:
-            self.concentration_overlay_widget._invalidate_cache()
             self.concentration_overlay_widget.update()
         self.save_color_settings()
     
@@ -1105,7 +1092,6 @@ class SurfaceTableViewer(QWidget):
         self.concentration_scatter_density = self.concentration_scatter_density_slider.value() / 100.0
         self.concentration_scatter_density_label.setText(f"{self.concentration_scatter_density:.1f}x")
         if self.concentration_overlay_widget:
-            self.concentration_overlay_widget._invalidate_cache()
             self.concentration_overlay_widget.update()
         self.save_color_settings()
     
@@ -1447,15 +1433,6 @@ class SurfaceTableViewer(QWidget):
         # Disable updates while populating to prevent flickering
         self.table.setUpdatesEnabled(False)
         
-        # Performance optimization: Pre-calculate font and colors
-        app = QApplication.instance()
-        screen = app.primaryScreen()
-        dpi_scale = screen.logicalDotsPerInch() / 96.0
-        font_size = max(7, int(8 * dpi_scale))
-        cell_font = QFont("Arial", font_size)
-        cell_font_bold = QFont("Arial", font_size)
-        cell_font_bold.setBold(True)
-        
         for i, y_val in enumerate(self.y_values):
             for j, x_val in enumerate(self.x_values):
                 z_val = self.z_values[i, j]
@@ -1489,11 +1466,16 @@ class SurfaceTableViewer(QWidget):
                 item = QTableWidgetItem(text)
                 item.setTextAlignment(Qt.AlignCenter)
                 
-                # Use pre-calculated fonts for better performance
+                # Enhanced text formatting with DPI awareness
+                app = QApplication.instance()
+                screen = app.primaryScreen()
+                dpi_scale = screen.logicalDotsPerInch() / 96.0
+                font_size = max(7, int(8 * dpi_scale))  # Scale font size with DPI
+                
+                font = QFont("Arial", font_size)
                 if not np.isnan(z_val):
-                    item.setFont(cell_font_bold)
-                else:
-                    item.setFont(cell_font)
+                    font.setBold(True)
+                item.setFont(font)
                 
                 # Add tooltip with detailed information
                 if display_data is not None:
@@ -1647,18 +1629,16 @@ class SurfaceTableViewer(QWidget):
                 self.legend_table.setItem(0, i, item)
     
     def on_table_resize(self, event):
-        """Handle table resize for dynamic column adjustment - Performance Optimized"""
+        """Handle table resize for dynamic column adjustment"""
         try:
             # Call the original resize event first
             QTableWidget.resizeEvent(self.table, event)
             
-            # Update overlay widget size with debouncing
+            # Update overlay widget size
             if self.concentration_overlay_widget:
-                new_size = self.table.viewport().size()
-                self.concentration_overlay_widget.setFixedSize(new_size)
-                self.concentration_overlay_widget._schedule_update()  # Use debounced update
+                self.concentration_overlay_widget.setFixedSize(self.table.viewport().size())
+                self.concentration_overlay_widget.update()
             
-            # Only resize columns if actually needed
             if hasattr(self, 'x_values') and len(self.x_values) > 0:
                 # Get DPI scaling factor safely
                 app = QApplication.instance()
@@ -1681,14 +1661,14 @@ class SurfaceTableViewer(QWidget):
                 if available_width > 0:
                     optimal_cell_width = max(min_width, min(max_width, available_width // len(self.x_values)))
                     
-                    # Only update if width actually changed to prevent unnecessary redraws
-                    current_width = self.table.columnWidth(1) if self.table.columnCount() > 1 else 0
-                    if abs(current_width - optimal_cell_width) > 5:  # Only update if significant change
-                        # Batch update column widths to prevent flickering
-                        self.table.setUpdatesEnabled(False)
-                        for i in range(1, len(self.x_values) + 1):
-                            self.table.setColumnWidth(i, optimal_cell_width)
-                        self.table.setUpdatesEnabled(True)
+                    # Batch update column widths to prevent flickering
+                    self.table.setUpdatesEnabled(False)
+                    for i in range(1, len(self.x_values) + 1):
+                        self.table.setColumnWidth(i, optimal_cell_width)
+                    self.table.setUpdatesEnabled(True)
+                
+                # Force a repaint to prevent cell disappearance
+                self.table.viewport().update()
                 
         except Exception as e:
             # Ensure updates are re-enabled in case of error
@@ -2180,41 +2160,6 @@ def show_surface_comparison(x_values, y_values, surface1, surface2, name1, name2
         z_values_for_comparison=surface1  # Use surface1 Z values for comparison calculations
     )
 
-def load_last_session_config():
-    """Load the last session configuration including file paths"""
-    try:
-        if os.path.exists('fuel_config.json'):
-            with open('fuel_config.json', 'r') as f:
-                config = json.load(f)
-                return config.get('last_session', {})
-    except Exception as e:
-        print(f"Warning: Could not load last session config: {e}")
-    return {}
-
-def save_last_session_config(csv_file_path, mdf_file_paths, surface_data):
-    """Save the current session configuration including file paths"""
-    try:
-        # Load existing config
-        config = {}
-        if os.path.exists('fuel_config.json'):
-            with open('fuel_config.json', 'r') as f:
-                config = json.load(f)
-        
-        # Save last session info
-        config['last_session'] = {
-            'csv_file_path': csv_file_path,
-            'mdf_file_paths': list(mdf_file_paths) if mdf_file_paths else [],
-            'has_surface_data': surface_data is not None,
-            'last_updated': str(pd.Timestamp.now())
-        }
-        
-        # Write config back
-        with open('fuel_config.json', 'w') as f:
-            json.dump(config, f, indent=2)
-        
-    except Exception as e:
-        print(f"Warning: Could not save last session config: {e}")
-
 def main():
     # Initialize QApplication first to ensure proper Qt initialization on main thread
     qt_app = QApplication.instance()
@@ -2228,31 +2173,23 @@ def main():
     mdf_file_paths = []
     csv_file_path = None
     surface_data = None
-    
-    # Load last session configuration
-    last_session = load_last_session_config()
 
     def select_csv_file():
         nonlocal csv_file_path, surface_data
         csv_file_path = filedialog.askopenfilename(
             title='Select Surface Table CSV File',
-            filetypes=[('CSV Files', '*.csv')],
-            initialdir=os.path.dirname(last_session.get('csv_file_path', '')) if last_session.get('csv_file_path') else None
+            filetypes=[('CSV Files', '*.csv')]
         )
         if not csv_file_path:
             messagebox.showerror('Error', 'No CSV file selected!')
             return
         else:
             lbl_csv_selected.config(text=f"CSV selected: {os.path.basename(csv_file_path)}")
-            # Save this selection immediately
-            save_last_session_config(csv_file_path, mdf_file_paths, surface_data)
             # Load CSV structure for column selection
             try:
                 df = pd.read_csv(csv_file_path, nrows=1)
                 column_names = df.columns.tolist()
                 surface_data = select_csv_surface_parameters(column_names, csv_file_path)
-                # Update saved config with surface data
-                save_last_session_config(csv_file_path, mdf_file_paths, surface_data)
             except Exception as e:
                 messagebox.showerror('Error', f'Failed to read CSV file: {e}')
                 csv_file_path = None
@@ -2264,23 +2201,15 @@ def main():
             messagebox.showerror('Error', 'Please select a Surface Table CSV file first!')
             return
             
-        # Use initial directory from last session
-        initial_dir = None
-        if last_session.get('mdf_file_paths'):
-            initial_dir = os.path.dirname(last_session['mdf_file_paths'][0])
-            
         mdf_file_paths = filedialog.askopenfilenames(
             title='Select MDF/MF4/DAT Files',
-            filetypes=[('MDF, MF4 and DAT Files', '*.dat *.mdf *.mf4'), ('DAT Files', '*.dat'), ('MDF Files', '*.mdf'), ('MF4 Files', '*.mf4')],
-            initialdir=initial_dir
+            filetypes=[('MDF, MF4 and DAT Files', '*.dat *.mdf *.mf4'), ('DAT Files', '*.dat'), ('MDF Files', '*.mdf'), ('MF4 Files', '*.mf4')]
         )
         if not mdf_file_paths:
             messagebox.showerror('Error', 'No MDF/MF4/DAT file selected!')
             return
         else:
             lbl_mdf_selected.config(text=f"{len(mdf_file_paths)} file(s) selected")
-            # Save this selection immediately
-            save_last_session_config(csv_file_path, mdf_file_paths, surface_data)
 
     def proceed():
         if not csv_file_path:
@@ -2305,38 +2234,6 @@ def main():
 
     lbl_csv_selected = tk.Label(root, text='No CSV file selected')
     lbl_csv_selected.pack()
-    
-    # Auto-load last session button
-    def load_last_session():
-        nonlocal csv_file_path, mdf_file_paths, surface_data
-        if last_session.get('csv_file_path') and os.path.exists(last_session['csv_file_path']):
-            csv_file_path = last_session['csv_file_path']
-            lbl_csv_selected.config(text=f"CSV loaded: {os.path.basename(csv_file_path)}")
-            
-            # Try to reload surface data
-            try:
-                df = pd.read_csv(csv_file_path, nrows=1)
-                column_names = df.columns.tolist()
-                surface_data = select_csv_surface_parameters(column_names, csv_file_path)
-                
-                # Auto-load MDF files if they exist
-                if last_session.get('mdf_file_paths'):
-                    existing_files = [f for f in last_session['mdf_file_paths'] if os.path.exists(f)]
-                    if existing_files:
-                        mdf_file_paths = existing_files
-                        lbl_mdf_selected.config(text=f"{len(mdf_file_paths)} file(s) loaded from last session")
-                    else:
-                        messagebox.showwarning('Warning', 'Some MDF files from last session no longer exist.')
-                        
-            except Exception as e:
-                messagebox.showerror('Error', f'Failed to reload last session: {e}')
-        else:
-            messagebox.showinfo('Info', 'No valid last session found.')
-    
-    # Show load last session button only if last session exists
-    if last_session.get('csv_file_path'):
-        btn_load_last = tk.Button(root, text='Load Last Session', command=load_last_session, bg='lightgreen')
-        btn_load_last.pack(pady=5)
 
     # Add separator
     tk.Frame(root, height=2, bd=1, relief=tk.SUNKEN).pack(fill=tk.X, padx=5, pady=10)

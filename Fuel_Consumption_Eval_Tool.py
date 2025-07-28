@@ -52,20 +52,9 @@ class ConcentrationOverlay(QWidget):
         self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.setFixedSize(parent_table.viewport().size())
         
-        # Performance optimization: Cache interpolated data
-        self._cached_interpolation = None
-        self._cache_key = None
-        self._update_pending = False
-        
-        # Optimization: Use timer to throttle scroll updates
-        from PyQt5.QtCore import QTimer
-        self._scroll_timer = QTimer()
-        self._scroll_timer.setSingleShot(True)
-        self._scroll_timer.timeout.connect(self._delayed_update)
-        
-        # Connect to parent table signals with throttling
-        parent_table.horizontalScrollBar().valueChanged.connect(self._throttled_update)
-        parent_table.verticalScrollBar().valueChanged.connect(self._throttled_update)
+        # Connect to parent table signals to update position and size
+        parent_table.horizontalScrollBar().valueChanged.connect(self.update_position)
+        parent_table.verticalScrollBar().valueChanged.connect(self.update_position)
         
         # Store original resize event handler
         self.original_resize_event = parent_table.viewport().resizeEvent
@@ -83,21 +72,9 @@ class ConcentrationOverlay(QWidget):
         self.setFixedSize(self.parent_table.viewport().size())
         self.update()
         
-    def _throttled_update(self):
-        """Throttle scroll updates to reduce CPU usage"""
-        if not self._update_pending:
-            self._update_pending = True
-            self._scroll_timer.start(16)  # ~60fps max update rate
-    
-    def _delayed_update(self):
-        """Delayed update after throttling"""
-        self._update_pending = False
+    def update_position(self):
+        """Update overlay position when table scrolls"""
         self.update()
-    
-    def invalidate_cache(self):
-        """Invalidate cached interpolation data"""
-        self._cached_interpolation = None
-        self._cache_key = None
         
     def paintEvent(self, event):
         """Paint the concentration overlay"""
@@ -127,7 +104,7 @@ class ConcentrationOverlay(QWidget):
             self.paint_interpolated_concentration(painter, header_width, header_height, scroll_x, scroll_y)
         
     def paint_interpolated_concentration(self, painter, header_width, header_height, scroll_x, scroll_y):
-        """Paint smooth interpolated concentration overlay with caching"""
+        """Paint smooth interpolated concentration overlay"""
         viewer = self.surface_viewer
         table = self.parent_table
         
@@ -137,99 +114,80 @@ class ConcentrationOverlay(QWidget):
         
         if rows == 0 or cols == 0:
             return
+            
+        # Calculate cell positions and sizes
+        data_points = []
+        values = []
         
-        # Create cache key based on current settings (not scroll position)
-        cache_key = (
-            viewer.concentration_transparency,
-            viewer.concentration_intensity,
-            viewer.concentration_gamma,
-            viewer.concentration_blur_enabled,
-            rows, cols,
-            self.width(), self.height()
-        )
+        for i in range(rows):
+            for j in range(cols):
+                # Get cell geometry
+                cell_x = header_width + sum(table.columnWidth(k+1) for k in range(j)) - scroll_x
+                cell_y = header_height + sum(table.rowHeight(k+1) for k in range(i)) - scroll_y
+                cell_width = table.columnWidth(j+1)
+                cell_height = table.rowHeight(i+1)
+                
+                # Get concentration value
+                conc_value = viewer.original_percentages[i, j] if not np.isnan(viewer.original_percentages[i, j]) else 0
+                
+                # Add center point of cell
+                center_x = cell_x + cell_width / 2
+                center_y = cell_y + cell_height / 2
+                
+                data_points.append((center_x, center_y))
+                values.append(conc_value)
         
-        # Check if we can use cached interpolation
-        if self._cached_interpolation is not None and self._cache_key == cache_key:
-            X, Y, Z_norm = self._cached_interpolation
-        else:
-            # Calculate cell positions and sizes (without scroll offset for caching)
-            data_points = []
-            values = []
+        if not data_points:
+            return
             
-            for i in range(rows):
-                for j in range(cols):
-                    # Get cell geometry without scroll offset
-                    cell_x = header_width + sum(table.columnWidth(k+1) for k in range(j))
-                    cell_y = header_height + sum(table.rowHeight(k+1) for k in range(i))
-                    cell_width = table.columnWidth(j+1)
-                    cell_height = table.rowHeight(i+1)
-                    
-                    # Get concentration value
-                    conc_value = viewer.original_percentages[i, j] if not np.isnan(viewer.original_percentages[i, j]) else 0
-                    
-                    # Add center point of cell
-                    center_x = cell_x + cell_width / 2
-                    center_y = cell_y + cell_height / 2
-                    
-                    data_points.append((center_x, center_y))
-                    values.append(conc_value)
-            
-            if not data_points:
-                return
-                
-            # Create a lower resolution grid for better performance
-            viewport_width = self.width()
-            viewport_height = self.height()
-            
-            # Optimized grid resolution (reduced for performance)
-            grid_resolution = max(8, min(16, viewport_width // 80))  # Lower resolution for better performance
-            x_grid = np.linspace(0, viewport_width, viewport_width // grid_resolution)
-            y_grid = np.linspace(0, viewport_height, viewport_height // grid_resolution)
+        # Create a higher resolution grid for smooth interpolation
+        viewport_width = self.width()
+        viewport_height = self.height()
         
-            # Convert data points to arrays
-            points = np.array(data_points)
-            values_array = np.array(values)
-            
-            if len(points) < 3:  # Need at least 3 points for interpolation
-                return
-                
-            # Create meshgrid for interpolation
-            X, Y = np.meshgrid(x_grid, y_grid)
-            
-            try:
-                # Use linear interpolation for better performance instead of cubic
-                Z = griddata(points, values_array, (X, Y), method='linear', fill_value=0)
-                
-                # Apply blur effect by smoothing the interpolated values
-                if viewer.concentration_blur_enabled and SCIPY_NDIMAGE_AVAILABLE:
-                    sigma = max(1.0, grid_resolution / 6)  # Reduced blur for performance
-                    Z = gaussian_filter(Z, sigma=sigma)
-                
-                # Normalize values
-                max_conc = np.nanmax(viewer.original_percentages) if not np.all(np.isnan(viewer.original_percentages)) else 1
-                if max_conc > 0:
-                    Z_norm = np.clip(Z / max_conc, 0, 1)
-                    
-                    # Apply intensity and gamma correction
-                    Z_norm = Z_norm * viewer.concentration_intensity
-                    Z_norm = np.power(np.clip(Z_norm, 0, 1), viewer.concentration_gamma)
-                else:
-                    Z_norm = np.zeros_like(Z)
-                
-                # Cache the interpolation result
-                self._cached_interpolation = (X, Y, Z_norm)
-                self._cache_key = cache_key
-                
-            except Exception as e:
-                # Fallback to simple radial gradients if interpolation fails
-                print(f"Interpolation failed, using fallback: {e}")
-                self.paint_radial_fallback(painter, data_points, values, max_conc if 'max_conc' in locals() else 1.0)
-                return
+        # Create interpolation grid (higher resolution for smoothness)
+        grid_resolution = max(4, min(8, viewport_width // 50))  # Adaptive resolution
+        x_grid = np.linspace(0, viewport_width, viewport_width // grid_resolution)
+        y_grid = np.linspace(0, viewport_height, viewport_height // grid_resolution)
         
-        # Paint the interpolated surface with scroll offset
-        self.paint_gradient_surface(painter, X, Y, Z_norm, grid_resolution, scroll_x, scroll_y)
+        # Convert data points to arrays
+        points = np.array(data_points)
+        values_array = np.array(values)
+        
+        if len(points) < 3:  # Need at least 3 points for interpolation
+            return
+            
+        # Create meshgrid for interpolation
+        X, Y = np.meshgrid(x_grid, y_grid)
+        
+        try:
+            # Interpolate concentration values
+            Z = griddata(points, values_array, (X, Y), method='cubic', fill_value=0)
+            
+            # Apply blur effect by smoothing the interpolated values
+            if viewer.concentration_blur_enabled and SCIPY_NDIMAGE_AVAILABLE:
+                sigma = max(1.0, grid_resolution / 4)  # Adaptive blur
+                Z = gaussian_filter(Z, sigma=sigma)
+            
+            # Normalize values
+            max_conc = np.nanmax(viewer.original_percentages) if not np.all(np.isnan(viewer.original_percentages)) else 1
+            if max_conc > 0:
+                Z_norm = np.clip(Z / max_conc, 0, 1)
+                
+                # Apply intensity and gamma correction
+                Z_norm = Z_norm * viewer.concentration_intensity
+                Z_norm = np.power(np.clip(Z_norm, 0, 1), viewer.concentration_gamma)
+            else:
+                Z_norm = np.zeros_like(Z)
+            
+            # Paint the interpolated surface
+            self.paint_gradient_surface(painter, X, Y, Z_norm, grid_resolution)
+            
+        except Exception as e:
+            # Fallback to simple radial gradients if interpolation fails
+            print(f"Interpolation failed, using fallback: {e}")
+            self.paint_radial_fallback(painter, data_points, values, max_conc)
     
-    def paint_gradient_surface(self, painter, X, Y, Z_norm, grid_resolution, scroll_x=0, scroll_y=0):
+    def paint_gradient_surface(self, painter, X, Y, Z_norm, grid_resolution):
         """Paint the interpolated surface using simple rectangles for better performance"""
         viewer = self.surface_viewer
         
@@ -239,16 +197,12 @@ class ConcentrationOverlay(QWidget):
         
         height, width = Z_norm.shape
         
-        # Paint using simple filled rectangles for performance with scroll offset
+        # Paint using simple filled rectangles for performance
         for i in range(height - 1):
             for j in range(width - 1):
-                # Get rectangle coordinates with scroll offset
-                x1, y1 = int(X[i, j] - scroll_x), int(Y[i, j] - scroll_y)
-                x2, y2 = int(X[i+1, j+1] - scroll_x), int(Y[i+1, j+1] - scroll_y)
-                
-                # Skip if rectangle is outside visible area
-                if x2 <= 0 or y2 <= 0 or x1 >= self.width() or y1 >= self.height():
-                    continue
+                # Get rectangle coordinates
+                x1, y1 = int(X[i, j]), int(Y[i, j])
+                x2, y2 = int(X[i+1, j+1]), int(Y[i+1, j+1])
                 
                 if x2 <= x1 or y2 <= y1:
                     continue
@@ -256,14 +210,10 @@ class ConcentrationOverlay(QWidget):
                 # Get average concentration for this cell
                 avg_conc = Z_norm[i, j]
                 
-                # Skip if concentration is too low to be visible
-                if avg_conc < 0.01:
-                    continue
-                
                 # Create color for this concentration level
                 color = self.interpolate_concentration_color(avg_conc, min_color, max_color, viewer.concentration_transparency)
                 
-                if color.alpha() > 5:  # Skip very transparent colors
+                if color.alpha() > 0:
                     painter.fillRect(x1, y1, x2-x1, y2-y1, color)
     
     def paint_radial_fallback(self, painter, data_points, values, max_conc):
@@ -1059,7 +1009,6 @@ class SurfaceTableViewer(QWidget):
         self.concentration_transparency = self.concentration_transparency_slider.value() / 100.0
         self.concentration_transparency_label.setText(f"{int(self.concentration_transparency * 100)}%")
         if self.concentration_overlay_widget:
-            self.concentration_overlay_widget.invalidate_cache()
             self.concentration_overlay_widget.update()
         self.update_concentration_metrics()
         self.save_color_settings()
@@ -1068,7 +1017,6 @@ class SurfaceTableViewer(QWidget):
         """Toggle concentration blur on/off"""
         self.concentration_blur_enabled = self.concentration_blur_cb.isChecked()
         if self.concentration_overlay_widget:
-            self.concentration_overlay_widget.invalidate_cache()
             self.concentration_overlay_widget.update()
         self.save_color_settings()
     
@@ -1079,7 +1027,6 @@ class SurfaceTableViewer(QWidget):
             self.concentration_colors['min_color'] = color
             self.conc_min_color_btn.setStyleSheet(f"background-color: {color.name()}")
             if self.concentration_overlay_widget:
-                self.concentration_overlay_widget.invalidate_cache()
                 self.concentration_overlay_widget.update()
             self.update_concentration_metrics()
             self.save_color_settings()
@@ -1091,7 +1038,6 @@ class SurfaceTableViewer(QWidget):
             self.concentration_colors['max_color'] = color
             self.conc_max_color_btn.setStyleSheet(f"background-color: {color.name()}")
             if self.concentration_overlay_widget:
-                self.concentration_overlay_widget.invalidate_cache()
                 self.concentration_overlay_widget.update()
             self.update_concentration_metrics()
             self.save_color_settings()
@@ -1101,7 +1047,6 @@ class SurfaceTableViewer(QWidget):
         self.concentration_mode = self.concentration_mode_combo.currentText()
         self.update_concentration_controls_visibility()
         if self.concentration_overlay_widget:
-            self.concentration_overlay_widget.invalidate_cache()
             self.concentration_overlay_widget.update()
         self.save_color_settings()
     
@@ -1122,7 +1067,6 @@ class SurfaceTableViewer(QWidget):
         self.concentration_intensity = self.concentration_intensity_slider.value() / 100.0
         self.concentration_intensity_label.setText(f"{self.concentration_intensity:.1f}x")
         if self.concentration_overlay_widget:
-            self.concentration_overlay_widget.invalidate_cache()
             self.concentration_overlay_widget.update()
         self.update_concentration_metrics()
         self.save_color_settings()
@@ -1132,7 +1076,6 @@ class SurfaceTableViewer(QWidget):
         self.concentration_gamma = self.concentration_gamma_slider.value() / 100.0
         self.concentration_gamma_label.setText(f"{self.concentration_gamma:.1f}")
         if self.concentration_overlay_widget:
-            self.concentration_overlay_widget.invalidate_cache()
             self.concentration_overlay_widget.update()
         self.save_color_settings()
     
@@ -1141,7 +1084,6 @@ class SurfaceTableViewer(QWidget):
         self.concentration_scatter_size = float(self.concentration_scatter_size_slider.value())
         self.concentration_scatter_size_label.setText(f"{self.concentration_scatter_size:.0f}px")
         if self.concentration_overlay_widget:
-            self.concentration_overlay_widget.invalidate_cache()
             self.concentration_overlay_widget.update()
         self.save_color_settings()
     
@@ -1150,7 +1092,6 @@ class SurfaceTableViewer(QWidget):
         self.concentration_scatter_density = self.concentration_scatter_density_slider.value() / 100.0
         self.concentration_scatter_density_label.setText(f"{self.concentration_scatter_density:.1f}x")
         if self.concentration_overlay_widget:
-            self.concentration_overlay_widget.invalidate_cache()
             self.concentration_overlay_widget.update()
         self.save_color_settings()
     
@@ -2219,49 +2160,6 @@ def show_surface_comparison(x_values, y_values, surface1, surface2, name1, name2
         z_values_for_comparison=surface1  # Use surface1 Z values for comparison calculations
     )
 
-def load_last_used_files():
-    """Load last used file paths from configuration"""
-    config = {}
-    if os.path.exists('fuel_config.json'):
-        try:
-            with open('fuel_config.json', 'r') as f:
-                config = json.load(f)
-        except:
-            pass
-    
-    return config.get('last_used_files', {})
-
-def save_last_used_files(csv_file=None, mdf_files=None, surface_data=None, comparison_files=None):
-    """Save last used file paths to configuration"""
-    # Load existing config
-    config = {}
-    if os.path.exists('fuel_config.json'):
-        try:
-            with open('fuel_config.json', 'r') as f:
-                config = json.load(f)
-        except:
-            pass
-    
-    # Update last used files section
-    if 'last_used_files' not in config:
-        config['last_used_files'] = {}
-    
-    if csv_file:
-        config['last_used_files']['csv_file'] = csv_file
-    if mdf_files:
-        config['last_used_files']['mdf_files'] = mdf_files
-    if surface_data:
-        config['last_used_files']['surface_data'] = surface_data
-    if comparison_files:
-        config['last_used_files']['comparison_files'] = comparison_files
-    
-    # Save configuration
-    try:
-        with open('fuel_config.json', 'w') as f:
-            json.dump(config, f, indent=2)
-    except Exception as e:
-        print(f"Warning: Could not save last used files: {e}")
-
 def main():
     # Initialize QApplication first to ensure proper Qt initialization on main thread
     qt_app = QApplication.instance()
@@ -2272,25 +2170,15 @@ def main():
     root.title('Fuel Consumption Evaluation Tool')
     root.geometry('500x400')
 
-    # Load last used files
-    last_used = load_last_used_files()
-    
-    mdf_file_paths = last_used.get('mdf_files', [])
-    csv_file_path = last_used.get('csv_file', None)
-    surface_data = last_used.get('surface_data', None)
+    mdf_file_paths = []
+    csv_file_path = None
+    surface_data = None
 
     def select_csv_file():
         nonlocal csv_file_path, surface_data
-        
-        # Use last directory if available
-        initial_dir = ""
-        if csv_file_path and os.path.exists(os.path.dirname(csv_file_path)):
-            initial_dir = os.path.dirname(csv_file_path)
-        
         csv_file_path = filedialog.askopenfilename(
             title='Select Surface Table CSV File',
-            filetypes=[('CSV Files', '*.csv')],
-            initialdir=initial_dir
+            filetypes=[('CSV Files', '*.csv')]
         )
         if not csv_file_path:
             messagebox.showerror('Error', 'No CSV file selected!')
@@ -2302,9 +2190,6 @@ def main():
                 df = pd.read_csv(csv_file_path, nrows=1)
                 column_names = df.columns.tolist()
                 surface_data = select_csv_surface_parameters(column_names, csv_file_path)
-                
-                # Save the selected CSV file
-                save_last_used_files(csv_file=csv_file_path, surface_data=surface_data)
             except Exception as e:
                 messagebox.showerror('Error', f'Failed to read CSV file: {e}')
                 csv_file_path = None
@@ -2315,27 +2200,16 @@ def main():
         if not csv_file_path:
             messagebox.showerror('Error', 'Please select a Surface Table CSV file first!')
             return
-        
-        # Use last directory if available
-        initial_dir = ""
-        if mdf_file_paths and os.path.exists(os.path.dirname(mdf_file_paths[0])):
-            initial_dir = os.path.dirname(mdf_file_paths[0])
-        elif csv_file_path and os.path.exists(os.path.dirname(csv_file_path)):
-            initial_dir = os.path.dirname(csv_file_path)
             
         mdf_file_paths = filedialog.askopenfilenames(
             title='Select MDF/MF4/DAT Files',
-            filetypes=[('MDF, MF4 and DAT Files', '*.dat *.mdf *.mf4'), ('DAT Files', '*.dat'), ('MDF Files', '*.mdf'), ('MF4 Files', '*.mf4')],
-            initialdir=initial_dir
+            filetypes=[('MDF, MF4 and DAT Files', '*.dat *.mdf *.mf4'), ('DAT Files', '*.dat'), ('MDF Files', '*.mdf'), ('MF4 Files', '*.mf4')]
         )
         if not mdf_file_paths:
             messagebox.showerror('Error', 'No MDF/MF4/DAT file selected!')
             return
         else:
             lbl_mdf_selected.config(text=f"{len(mdf_file_paths)} file(s) selected")
-            
-            # Save the selected MDF files
-            save_last_used_files(mdf_files=list(mdf_file_paths))
 
     def proceed():
         if not csv_file_path:
@@ -2358,12 +2232,7 @@ def main():
     btn_select_csv = tk.Button(root, text='Select Surface Table CSV File', command=select_csv_file, bg='lightblue')
     btn_select_csv.pack(pady=10)
 
-    # Show last used CSV file if available
-    initial_csv_text = 'No CSV file selected'
-    if csv_file_path and os.path.exists(csv_file_path):
-        initial_csv_text = f"CSV selected: {os.path.basename(csv_file_path)} (last used)"
-    
-    lbl_csv_selected = tk.Label(root, text=initial_csv_text)
+    lbl_csv_selected = tk.Label(root, text='No CSV file selected')
     lbl_csv_selected.pack()
 
     # Add separator
@@ -2374,12 +2243,7 @@ def main():
     btn_select_mdf = tk.Button(root, text='Select MDF/MF4/DAT Files', command=select_mdf_files, bg='lightgreen')
     btn_select_mdf.pack(pady=10)
 
-    # Show last used MDF files if available
-    initial_mdf_text = 'No MDF/MF4/DAT file selected'
-    if mdf_file_paths and all(os.path.exists(f) for f in mdf_file_paths):
-        initial_mdf_text = f"{len(mdf_file_paths)} file(s) selected (last used)"
-    
-    lbl_mdf_selected = tk.Label(root, text=initial_mdf_text)
+    lbl_mdf_selected = tk.Label(root, text='No MDF/MF4/DAT file selected')
     lbl_mdf_selected.pack()
 
     # Add separator
@@ -3252,27 +3116,17 @@ def select_comparison_files(surface_data, main_percentages, main_points_inside, 
     comparison_window.title('Select Comparison Files')
     comparison_window.geometry('600x500')
     
-    # Load last used comparison files
-    last_used = load_last_used_files()
-    comparison_files = last_used.get('comparison_files', [])
+    # File selection
+    comparison_files = []
     
     def select_files():
         nonlocal comparison_files
-        
-        # Use last directory if available
-        initial_dir = ""
-        if comparison_files and os.path.exists(os.path.dirname(comparison_files[0])):
-            initial_dir = os.path.dirname(comparison_files[0])
-        
         comparison_files = filedialog.askopenfilenames(
             title='Select Comparison MDF/MF4/DAT Files',
-            filetypes=[('MDF, MF4 and DAT Files', '*.dat *.mdf *.mf4'), ('DAT Files', '*.dat'), ('MDF Files', '*.mdf'), ('MF4 Files', '*.mf4')],
-            initialdir=initial_dir
+            filetypes=[('MDF, MF4 and DAT Files', '*.dat *.mdf *.mf4'), ('DAT Files', '*.dat'), ('MDF Files', '*.mdf'), ('MF4 Files', '*.mf4')]
         )
         if comparison_files:
             lbl_files_selected.config(text=f"{len(comparison_files)} file(s) selected")
-            # Save the selected comparison files
-            save_last_used_files(comparison_files=list(comparison_files))
         else:
             lbl_files_selected.config(text="No files selected")
     
@@ -3281,12 +3135,7 @@ def select_comparison_files(surface_data, main_percentages, main_points_inside, 
     btn_select_files = tk.Button(comparison_window, text='Select MDF/MF4/DAT Files', command=select_files)
     btn_select_files.pack(pady=5)
     
-    # Show last used comparison files if available
-    initial_comparison_text = 'No files selected'
-    if comparison_files and all(os.path.exists(f) for f in comparison_files):
-        initial_comparison_text = f"{len(comparison_files)} file(s) selected (last used)"
-    
-    lbl_files_selected = tk.Label(comparison_window, text=initial_comparison_text)
+    lbl_files_selected = tk.Label(comparison_window, text='No files selected')
     lbl_files_selected.pack(pady=5)
     
     # Channel selection

@@ -21,24 +21,25 @@ from scipy.interpolate import griddata
 import tempfile
 import shutil
 from pathlib import Path
+import json
 
 class VehicleLogChannelAppender:
     def __init__(self):
         self.root = tk.Tk()
-        self.root.title("Vehicle Log Channel Appender")
+        self.root.title("Fuel Consumption Evaluation Tool")
         self.root.geometry("800x600")
         
         # Data storage
         self.vehicle_file_path = None
         self.csv_surface_path = None
         self.vehicle_data = None
-        self.csv_data = None
+        self.surface_data = None  # This will store the loaded surface table (x_values, y_values, z_matrix)
         self.available_channels = []
         
         # Selected parameters
         self.rpm_channel = tk.StringVar()
         self.etasp_channel = tk.StringVar()
-        self.new_channel_name = tk.StringVar(value="Calculated_Z")
+        self.new_channel_name = tk.StringVar(value="Calculated_Fuel_Consumption")
         
         self.setup_ui()
         
@@ -46,7 +47,7 @@ class VehicleLogChannelAppender:
         """Setup the user interface"""
         
         # Title
-        title_label = tk.Label(self.root, text="Vehicle Log Channel Appender", 
+        title_label = tk.Label(self.root, text="Fuel Consumption Evaluation Tool", 
                               font=("Arial", 16, "bold"))
         title_label.pack(pady=10)
         
@@ -55,14 +56,14 @@ class VehicleLogChannelAppender:
         main_frame.pack(fill="both", expand=True, padx=20, pady=10)
         
         # Step 1: Select CSV Surface Table
-        step1_frame = tk.LabelFrame(main_frame, text="Step 1: Select CSV Surface Table", 
+        step1_frame = tk.LabelFrame(main_frame, text="Step 1: Select Surface Table CSV (defines RPM/ETASP ranges)", 
                                    font=("Arial", 12, "bold"))
         step1_frame.pack(fill="x", pady=5)
         
         csv_btn_frame = tk.Frame(step1_frame)
         csv_btn_frame.pack(fill="x", padx=10, pady=10)
         
-        self.csv_btn = tk.Button(csv_btn_frame, text="Select CSV Surface Table", 
+        self.csv_btn = tk.Button(csv_btn_frame, text="Select Surface Table CSV File", 
                                 command=self.select_csv_file, bg="lightblue")
         self.csv_btn.pack(side="left")
         
@@ -71,18 +72,18 @@ class VehicleLogChannelAppender:
         self.csv_status.pack(side="left", padx=10)
         
         # Step 2: Select Vehicle Log File
-        step2_frame = tk.LabelFrame(main_frame, text="Step 2: Select Vehicle Log File", 
+        step2_frame = tk.LabelFrame(main_frame, text="Step 2: Select Vehicle Log Files", 
                                    font=("Arial", 12, "bold"))
         step2_frame.pack(fill="x", pady=5)
         
         vehicle_btn_frame = tk.Frame(step2_frame)
         vehicle_btn_frame.pack(fill="x", padx=10, pady=10)
         
-        self.vehicle_btn = tk.Button(vehicle_btn_frame, text="Select Vehicle Log File", 
+        self.vehicle_btn = tk.Button(vehicle_btn_frame, text="Select MDF/MF4/DAT Files", 
                                     command=self.select_vehicle_file, bg="lightgreen")
         self.vehicle_btn.pack(side="left")
         
-        self.vehicle_status = tk.Label(vehicle_btn_frame, text="No vehicle file selected", 
+        self.vehicle_status = tk.Label(vehicle_btn_frame, text="No MDF/MF4/DAT file selected", 
                                       fg="red")
         self.vehicle_status.pack(side="left", padx=10)
         
@@ -114,388 +115,665 @@ class VehicleLogChannelAppender:
         name_frame = tk.Frame(params_frame)
         name_frame.pack(fill="x", pady=2)
         tk.Label(name_frame, text="New Channel Name:", width=15, anchor="w").pack(side="left")
-        name_entry = tk.Entry(name_frame, textvariable=self.new_channel_name, width=32)
-        name_entry.pack(side="left", padx=5)
+        tk.Entry(name_frame, textvariable=self.new_channel_name, width=30).pack(side="left", padx=5)
         
         # Step 4: Process
-        step4_frame = tk.LabelFrame(main_frame, text="Step 4: Process and Export", 
+        step4_frame = tk.LabelFrame(main_frame, text="Step 4: Process and Append Channel", 
                                    font=("Arial", 12, "bold"))
         step4_frame.pack(fill="x", pady=5)
         
         process_frame = tk.Frame(step4_frame)
-        process_frame.pack(pady=10)
+        process_frame.pack(fill="x", padx=10, pady=10)
         
-        self.process_btn = tk.Button(process_frame, text="Calculate and Append Channel", 
-                                    command=self.process_and_export, bg="orange", 
-                                    font=("Arial", 12, "bold"))
+        self.process_btn = tk.Button(process_frame, text="Process and Append Channel", 
+                                    command=self.process_and_append, bg="orange", 
+                                    font=("Arial", 10, "bold"))
         self.process_btn.pack()
         
-        # Status text area
-        status_frame = tk.LabelFrame(main_frame, text="Status Log", 
-                                    font=("Arial", 12, "bold"))
-        status_frame.pack(fill="both", expand=True, pady=5)
+        # Status/Log area
+        log_frame = tk.LabelFrame(main_frame, text="Status Log", font=("Arial", 10, "bold"))
+        log_frame.pack(fill="both", expand=True, pady=5)
         
-        self.status_text = tk.Text(status_frame, height=8, wrap="word")
-        scrollbar = tk.Scrollbar(status_frame, orient="vertical", command=self.status_text.yview)
-        self.status_text.configure(yscrollcommand=scrollbar.set)
+        # Create scrollable text widget
+        text_frame = tk.Frame(log_frame)
+        text_frame.pack(fill="both", expand=True, padx=5, pady=5)
         
-        self.status_text.pack(side="left", fill="both", expand=True, padx=5, pady=5)
+        self.log_text = tk.Text(text_frame, height=8, wrap=tk.WORD)
+        scrollbar = tk.Scrollbar(text_frame, orient="vertical", command=self.log_text.yview)
+        self.log_text.configure(yscrollcommand=scrollbar.set)
+        
+        self.log_text.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
         
-    def log_status(self, message):
-        """Add message to status log"""
-        self.status_text.insert(tk.END, f"{message}\n")
-        self.status_text.see(tk.END)
-        self.root.update_idletasks()
+        self.log_status("Application started. Please select a CSV surface table file.")
         
     def select_csv_file(self):
-        """Select CSV surface table file"""
+        """Select CSV surface table file and configure parameters"""
         file_path = filedialog.askopenfilename(
-            title="Select CSV Surface Table",
-            filetypes=[("CSV Files", "*.csv"), ("All Files", "*.*")]
+            title="Select Surface Table CSV File",
+            filetypes=[("CSV Files", "*.csv")]
         )
         
-        if file_path:
-            try:
-                self.csv_surface_path = file_path
-                self.load_csv_surface_table()
-                self.csv_status.config(text=f"CSV loaded: {os.path.basename(file_path)}", fg="green")
-                self.log_status(f"CSV surface table loaded: {file_path}")
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to load CSV file: {str(e)}")
-                self.log_status(f"Error loading CSV: {str(e)}")
-                
-    def load_csv_surface_table(self):
-        """Load and parse CSV surface table using the exact same logic as Fuel_Consumption_Eval_Tool"""
+        if not file_path:
+            return
+            
+        self.csv_surface_path = file_path
+        self.csv_status.config(text=f"CSV selected: {os.path.basename(file_path)}", fg="green")
+        self.log_status(f"Selected CSV surface table: {os.path.basename(file_path)}")
+        
         try:
-            # Read the CSV file with headers, then handle units row if present - EXACTLY like Fuel_Consumption_Eval_Tool
-            df_full = pd.read_csv(self.csv_surface_path)
+            # Load CSV structure for column selection
+            df = pd.read_csv(file_path, nrows=1)
+            column_names = df.columns.tolist()
+            self.surface_data = self.select_csv_surface_parameters(column_names, file_path)
             
-            # Check if we have at least 3 columns
-            if len(df_full.columns) < 3:
-                raise ValueError("CSV must have at least 3 columns (X, Y, Z)")
-            
-            # Use first three columns as X (RPM), Y (ETASP), Z columns
-            x_col = df_full.columns[0]
-            y_col = df_full.columns[1] 
-            z_col = df_full.columns[2]
-            
-            # Remove the units row if present (EXACT same logic as Fuel_Consumption_Eval_Tool)
-            if len(df_full) > 0:
-                # Check if the first row contains units (non-numeric data in numeric columns)
-                try:
-                    # Try to convert the first data row to numeric
-                    pd.to_numeric(df_full.iloc[0][x_col])
-                    pd.to_numeric(df_full.iloc[0][y_col]) 
-                    pd.to_numeric(df_full.iloc[0][z_col])
-                    # If successful, no units row to skip
-                    df = df_full
-                except (ValueError, TypeError):
-                    # If conversion fails, skip the first row (units row)
-                    df = df_full.iloc[1:].reset_index(drop=True)
-            else:
-                df = df_full
-            
-            # Extract valid data points using EXACT same approach as Fuel_Consumption_Eval_Tool
-            valid_data = []
-            for idx, row in df.iterrows():
-                try:
-                    x_val = pd.to_numeric(row[x_col], errors='coerce')
-                    y_val = pd.to_numeric(row[y_col], errors='coerce') 
-                    z_val = pd.to_numeric(row[z_col], errors='coerce')
-                    
-                    # EXACT same logic: check if all three values are valid numbers
-                    if pd.notna(x_val) and pd.notna(y_val) and pd.notna(z_val):
-                        valid_data.append([x_val, y_val, z_val])
-                except (ValueError, TypeError, KeyError):
-                    continue  # Skip invalid rows - handles "**" and other non-numeric data
-            
-            # Use EXACT same error handling as Fuel_Consumption_Eval_Tool
-            if not valid_data:
-                raise ValueError("No valid data points found in CSV file")
-            
-            # Convert to numpy array and extract columns - EXACT same as Fuel_Consumption_Eval_Tool
-            valid_data = np.array(valid_data)
-            x_data = valid_data[:, 0]  # RPM data
-            y_data = valid_data[:, 1]  # ETASP data  
-            z_data = valid_data[:, 2]  # Z data
-            
-            # Store the data using the same structure expected by interpolation
-            self.csv_data = {
-                'rpm': x_data,
-                'etasp': y_data,
-                'z': z_data
-            }
-            
-            # Log data info for debugging
-            self.log_status(f"CSV data loaded with {len(valid_data)} valid points")
-            self.log_status(f"Columns used: X='{x_col}', Y='{y_col}', Z='{z_col}'")
-            self.log_status(f"X (RPM) range: {x_data.min():.2f} - {x_data.max():.2f}")
-            self.log_status(f"Y (ETASP) range: {y_data.min():.2f} - {y_data.max():.2f}")
-            self.log_status(f"Z range: {z_data.min():.2f} - {z_data.max():.2f}")
+            if self.surface_data:
+                self.log_status("Surface table loaded and configured successfully!")
             
         except Exception as e:
-            raise Exception(f"Error parsing CSV surface table: {str(e)}")
+            messagebox.showerror("Error", f"Failed to load CSV file: {str(e)}")
+            self.csv_status.config(text="No CSV file selected", fg="red")
+            self.csv_surface_path = None
+            self.log_status(f"Error loading CSV: {str(e)}")
+
+    def select_csv_surface_parameters(self, column_names, csv_file_path):
+        """Select CSV surface table parameters and load the surface data"""
+        columns_window = tk.Toplevel(self.root)
+        columns_window.title('Configure Surface Table CSV')
+        columns_window.geometry('500x700')
+        columns_window.grab_set()  # Make it modal
+        
+        tk.Label(columns_window, text='Configure Surface Table Parameters', 
+                font=('TkDefaultFont', 14, 'bold')).pack(pady=10)
+        tk.Label(columns_window, text='Select the columns for X, Y, and Z axes:', 
+                font=('TkDefaultFont', 12)).pack(pady=10)
+        
+        # Load previous CSV column selections from config
+        csv_config = {}
+        if os.path.exists('fuel_config.json'):
+            try:
+                with open('fuel_config.json', 'r') as f:
+                    config_data = json.load(f)
+                    csv_config = config_data.get('csv_columns', {})
+            except:
+                pass
+        
+        # X-axis (RPM)
+        tk.Label(columns_window, text='X-axis (RPM):').pack(pady=5)
+        x_var = tk.StringVar()
+        x_combobox = ttk.Combobox(columns_window, textvariable=x_var, values=column_names, state='readonly')
+        if csv_config.get('x_column') in column_names:
+            x_var.set(csv_config['x_column'])
+        x_combobox.pack(pady=5)
+        
+        # Y-axis (ETASP)
+        tk.Label(columns_window, text='Y-axis (ETASP):').pack(pady=5)
+        y_var = tk.StringVar()
+        y_combobox = ttk.Combobox(columns_window, textvariable=y_var, values=column_names, state='readonly')
+        if csv_config.get('y_column') in column_names:
+            y_var.set(csv_config['y_column'])
+        y_combobox.pack(pady=5)
+        
+        # Z-axis (Results)
+        tk.Label(columns_window, text='Z-axis (Results):').pack(pady=5)
+        z_var = tk.StringVar()
+        z_combobox = ttk.Combobox(columns_window, textvariable=z_var, values=column_names, state='readonly')
+        if csv_config.get('z_column') in column_names:
+            z_var.set(csv_config['z_column'])
+        z_combobox.pack(pady=5)
+        
+        # Separator
+        tk.Frame(columns_window, height=2, bg='gray').pack(fill='x', pady=10)
+        
+        # Interpolation Parameters
+        tk.Label(columns_window, text='Interpolation Parameters:', 
+                font=('TkDefaultFont', 12, 'bold')).pack(pady=10)
+        
+        # RPM range frame
+        rpm_frame = tk.Frame(columns_window)
+        rpm_frame.pack(pady=5)
+        
+        tk.Label(rpm_frame, text='RPM Min:').grid(row=0, column=0, padx=5)
+        rpm_min_var = tk.DoubleVar(value=csv_config.get('rpm_min', 1000.0))
+        tk.Entry(rpm_frame, textvariable=rpm_min_var, width=10).grid(row=0, column=1, padx=5)
+        
+        tk.Label(rpm_frame, text='RPM Max:').grid(row=0, column=2, padx=5)
+        rpm_max_var = tk.DoubleVar(value=csv_config.get('rpm_max', 4000.0))
+        tk.Entry(rpm_frame, textvariable=rpm_max_var, width=10).grid(row=0, column=3, padx=5)
+        
+        tk.Label(rpm_frame, text='RPM Intervals:').grid(row=1, column=0, columnspan=2, padx=5, pady=5)
+        rpm_intervals_var = tk.IntVar(value=csv_config.get('rpm_intervals', 50))
+        tk.Entry(rpm_frame, textvariable=rpm_intervals_var, width=10).grid(row=1, column=2, columnspan=2, padx=5, pady=5)
+        
+        # ETASP Interpolation Parameters
+        tk.Label(columns_window, text='ETASP Parameters:', 
+                font=('TkDefaultFont', 12, 'bold')).pack(pady=(15,5))
+        
+        # ETASP range frame
+        etasp_frame = tk.Frame(columns_window)
+        etasp_frame.pack(pady=5)
+        
+        tk.Label(etasp_frame, text='ETASP Min:').grid(row=0, column=0, padx=5)
+        etasp_min_var = tk.DoubleVar(value=csv_config.get('etasp_min', 0.0))
+        tk.Entry(etasp_frame, textvariable=etasp_min_var, width=10).grid(row=0, column=1, padx=5)
+        
+        tk.Label(etasp_frame, text='ETASP Max:').grid(row=0, column=2, padx=5)
+        etasp_max_var = tk.DoubleVar(value=csv_config.get('etasp_max', 1.0))
+        tk.Entry(etasp_frame, textvariable=etasp_max_var, width=10).grid(row=0, column=3, padx=5)
+        
+        tk.Label(etasp_frame, text='Number of Intervals:').grid(row=1, column=0, columnspan=2, padx=5, pady=5)
+        etasp_intervals_var = tk.IntVar(value=csv_config.get('etasp_intervals', 50))
+        tk.Entry(etasp_frame, textvariable=etasp_intervals_var, width=10).grid(row=1, column=2, columnspan=2, padx=5, pady=5)
+        
+        # Auto-detect functionality
+        def auto_detect_etasp_range():
+            y_col = y_var.get()
+            if not y_col:
+                messagebox.showerror('Error', 'Please select Y-axis (ETASP) column first!')
+                return
             
+            try:
+                df_full = pd.read_csv(csv_file_path)
+                if len(df_full) > 0:
+                    try:
+                        pd.to_numeric(df_full.iloc[0][y_col])
+                        df = df_full
+                    except (ValueError, TypeError):
+                        df = df_full.iloc[1:].reset_index(drop=True)
+                else:
+                    df = df_full
+                
+                etasp_data = pd.to_numeric(df[y_col], errors='coerce').dropna()
+                if len(etasp_data) > 0:
+                    etasp_min_var.set(round(etasp_data.min(), 3))
+                    etasp_max_var.set(round(etasp_data.max(), 3))
+                    messagebox.showinfo('Auto-Detect', f'ETASP range detected: {etasp_data.min():.3f} to {etasp_data.max():.3f}')
+                else:
+                    messagebox.showerror('Error', 'No valid ETASP data found!')
+                    
+            except Exception as e:
+                messagebox.showerror('Error', f'Failed to auto-detect ETASP range: {e}')
+        
+        def auto_detect_rpm_range():
+            x_col = x_var.get()
+            if not x_col:
+                messagebox.showerror('Error', 'Please select X-axis (RPM) column first!')
+                return
+            
+            try:
+                df_full = pd.read_csv(csv_file_path)
+                if len(df_full) > 0:
+                    try:
+                        pd.to_numeric(df_full.iloc[0][x_col])
+                        df = df_full
+                    except (ValueError, TypeError):
+                        df = df_full.iloc[1:].reset_index(drop=True)
+                else:
+                    df = df_full
+                
+                rpm_data = pd.to_numeric(df[x_col], errors='coerce').dropna()
+                if len(rpm_data) > 0:
+                    rpm_min_var.set(round(rpm_data.min(), 0))
+                    rpm_max_var.set(round(rpm_data.max(), 0))
+                    messagebox.showinfo('Auto-Detect', f'RPM range detected: {rpm_data.min():.0f} to {rpm_data.max():.0f}')
+                else:
+                    messagebox.showerror('Error', 'No valid RPM data found!')
+                    
+            except Exception as e:
+                messagebox.showerror('Error', f'Failed to auto-detect RPM range: {e}')
+        
+        # Auto-detect buttons frame
+        auto_detect_frame = tk.Frame(columns_window)
+        auto_detect_frame.pack(pady=10)
+        
+        btn_auto_detect_rpm = tk.Button(auto_detect_frame, text='Auto-Detect RPM Range', command=auto_detect_rpm_range)
+        btn_auto_detect_rpm.pack(side='left', padx=5)
+        
+        btn_auto_detect_etasp = tk.Button(auto_detect_frame, text='Auto-Detect ETASP Range', command=auto_detect_etasp_range)
+        btn_auto_detect_etasp.pack(side='left', padx=5)
+        
+        surface_data_result = [None]  # Use list to make it mutable in nested function
+        
+        def confirm_csv_config():
+            x_col = x_var.get()
+            y_col = y_var.get()
+            z_col = z_var.get()
+            
+            if not all([x_col, y_col, z_col]):
+                messagebox.showerror('Error', 'Please select all three columns!')
+                return
+                
+            if len(set([x_col, y_col, z_col])) != 3:
+                messagebox.showerror('Error', 'Please select different columns for X, Y, and Z axes!')
+                return
+            
+            # Get interpolation parameters
+            rpm_min = rpm_min_var.get()
+            rpm_max = rpm_max_var.get()
+            rpm_intervals = rpm_intervals_var.get()
+            etasp_min = etasp_min_var.get()
+            etasp_max = etasp_max_var.get()
+            etasp_intervals = etasp_intervals_var.get()
+            
+            # Save configuration
+            config = {
+                'csv_columns': {
+                    'x_column': x_col,
+                    'y_column': y_col,
+                    'z_column': z_col,
+                    'rpm_min': rpm_min,
+                    'rpm_max': rpm_max,
+                    'rpm_intervals': rpm_intervals,
+                    'etasp_min': etasp_min,
+                    'etasp_max': etasp_max,
+                    'etasp_intervals': etasp_intervals
+                }
+            }
+            
+            try:
+                with open('fuel_config.json', 'w') as f:
+                    json.dump(config, f, indent=2)
+            except Exception as e:
+                print(f"Warning: Could not save configuration: {e}")
+                
+            try:
+                surface_data = self.load_surface_table(csv_file_path, x_col, y_col, z_col, 
+                                                     rpm_min, rpm_max, rpm_intervals,
+                                                     etasp_min, etasp_max, etasp_intervals)
+                surface_data_result[0] = surface_data
+                columns_window.destroy()
+                
+            except Exception as e:
+                messagebox.showerror('Error', f'Failed to load surface table: {e}')
+        
+        # Create button frame
+        button_frame = tk.Frame(columns_window)
+        button_frame.pack(pady=20)
+        
+        tk.Button(button_frame, text='Load Surface Table', command=confirm_csv_config, 
+                 bg='lightgreen', font=('TkDefaultFont', 10, 'bold')).pack(side='left', padx=10)
+        tk.Button(button_frame, text='Cancel', command=columns_window.destroy, 
+                 bg='lightcoral').pack(side='left', padx=10)
+        
+        # Wait for window to close
+        columns_window.wait_window()
+        
+        return surface_data_result[0]
+
+    def load_surface_table(self, csv_file_path, x_col, y_col, z_col, rpm_min=None, rpm_max=None, rpm_intervals=None, etasp_min=None, etasp_max=None, etasp_intervals=None):
+        """Load surface table from 3-column CSV format with optional interpolation - exact same logic as Fuel_Consumption_Eval_Tool"""
+        # Read the CSV file with headers, then skip the units row (row 1)
+        df_full = pd.read_csv(csv_file_path)
+        
+        # Remove the units row (which is the first data row after headers)
+        if len(df_full) > 0:
+            # Check if the first row contains units (non-numeric data in numeric columns)
+            try:
+                # Try to convert the first data row to numeric
+                pd.to_numeric(df_full.iloc[0][x_col])
+                pd.to_numeric(df_full.iloc[0][y_col]) 
+                pd.to_numeric(df_full.iloc[0][z_col])
+                # If successful, no units row to skip
+                df = df_full
+            except (ValueError, TypeError):
+                # If conversion fails, skip the first row (units row)
+                df = df_full.iloc[1:].reset_index(drop=True)
+        else:
+            df = df_full
+        
+        # Extract valid data points
+        valid_data = []
+        for idx, row in df.iterrows():
+            try:
+                x_val = pd.to_numeric(row[x_col], errors='coerce')
+                y_val = pd.to_numeric(row[y_col], errors='coerce') 
+                z_val = pd.to_numeric(row[z_col], errors='coerce')
+                
+                if pd.notna(x_val) and pd.notna(y_val) and pd.notna(z_val):
+                    valid_data.append([x_val, y_val, z_val])
+            except (ValueError, TypeError, KeyError):
+                continue  # Skip invalid rows
+        
+        if not valid_data:
+            raise ValueError("No valid data points found in CSV file")
+        
+        valid_data = np.array(valid_data)
+        x_data = valid_data[:, 0]
+        y_data = valid_data[:, 1]
+        z_data = valid_data[:, 2]
+        
+        # Create interpolated RPM grid if parameters provided
+        if rpm_min is not None and rpm_max is not None and rpm_intervals is not None:
+            x_unique = np.linspace(rpm_min, rpm_max, rpm_intervals + 1)
+        else:
+            # Use original RPM values
+            x_unique = sorted(np.unique(x_data))
+        
+        # Create interpolated ETASP grid if parameters provided
+        if etasp_min is not None and etasp_max is not None and etasp_intervals is not None:
+            y_unique = np.linspace(etasp_min, etasp_max, etasp_intervals + 1)
+        else:
+            # Use original ETASP values
+            y_unique = sorted(np.unique(y_data))
+        
+        # Create meshgrid for interpolation
+        X_grid, Y_grid = np.meshgrid(x_unique, y_unique)
+        
+        # Interpolate Z values using griddata
+        try:
+            # Use linear interpolation to fill the grid
+            Z_grid = griddata(
+                points=(x_data, y_data),
+                values=z_data,
+                xi=(X_grid, Y_grid),
+                method='linear',
+                fill_value=np.nan
+            )
+            
+            # For points outside convex hull, try nearest neighbor
+            mask_nan = np.isnan(Z_grid)
+            if np.any(mask_nan):
+                Z_nearest = griddata(
+                    points=(x_data, y_data),
+                    values=z_data,
+                    xi=(X_grid, Y_grid),
+                    method='nearest'
+                )
+                # Only fill NaN values that are close to existing data
+                Z_grid[mask_nan] = Z_nearest[mask_nan]
+                
+        except Exception as e:
+            print(f"Interpolation warning: {e}")
+            # Fallback: create grid with original data points only
+            Z_grid = np.full((len(y_unique), len(x_unique)), np.nan)
+            for i, (x_val, y_val, z_val) in enumerate(valid_data):
+                # Find closest grid point
+                x_idx = np.argmin(np.abs(x_unique - x_val))
+                y_idx = np.argmin(np.abs(y_unique - y_val))
+                Z_grid[y_idx, x_idx] = z_val
+        
+        return np.array(x_unique), np.array(y_unique), Z_grid
+                
     def select_vehicle_file(self):
         """Select vehicle log file"""
         file_path = filedialog.askopenfilename(
             title="Select Vehicle Log File",
             filetypes=[
-                ("MDF, MF4 and DAT Files", "*.dat *.mdf *.mf4"),
+                ("All Supported", "*.csv *.dat *.mdf *.mf4"),
                 ("CSV Files", "*.csv"),
                 ("DAT Files", "*.dat"),
                 ("MDF Files", "*.mdf"),
-                ("MF4 Files", "*.mf4"),
-                ("All Files", "*.*")
+                ("MF4 Files", "*.mf4")
             ]
         )
         
-        if file_path:
-            try:
-                self.vehicle_file_path = file_path
-                self.load_vehicle_file()
-                self.vehicle_status.config(text=f"Vehicle file loaded: {os.path.basename(file_path)}", fg="green")
-                self.log_status(f"Vehicle file loaded: {file_path}")
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to load vehicle file: {str(e)}")
-                self.log_status(f"Error loading vehicle file: {str(e)}")
-                
+        if not file_path:
+            return
+            
+        if not self.surface_data:
+            messagebox.showerror("Error", "Please select and configure a surface table CSV file first!")
+            return
+            
+        self.vehicle_file_path = file_path
+        self.vehicle_status.config(text=f"Selected: {os.path.basename(file_path)}", fg="green")
+        self.log_status(f"Selected vehicle file: {os.path.basename(file_path)}")
+        
+        try:
+            self.load_vehicle_file()
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load vehicle file: {str(e)}")
+            self.log_status(f"Error loading vehicle file: {str(e)}")
+
     def load_vehicle_file(self):
-        """Load vehicle log file and get available channels"""
+        """Load vehicle file using the exact same logic as Fuel_Consumption_Eval_Tool"""
         file_ext = Path(self.vehicle_file_path).suffix.lower()
         
         if file_ext == '.csv':
             self.load_csv_vehicle_file()
-        else:
+        elif file_ext in ['.mdf', '.mf4', '.dat']:
             self.load_mdf_vehicle_file()
-            
+        else:
+            raise Exception(f"Unsupported file format: {file_ext}")
+
     def load_csv_vehicle_file(self):
         """Load CSV vehicle file using the exact same logic as Fuel_Consumption_Eval_Tool"""
         try:
-            # Read the CSV file with headers, then handle units row if present - EXACTLY like Fuel_Consumption_Eval_Tool
-            df_full = pd.read_csv(self.vehicle_file_path)
+            # Read CSV file
+            df = pd.read_csv(self.vehicle_file_path)
             
-            # Remove the units row if present (EXACT same logic as Fuel_Consumption_Eval_Tool)
-            if len(df_full) > 0:
-                # Check if the first row contains units (non-numeric data)
-                # Try to find at least one numeric column to test - EXACT same logic
-                numeric_test_passed = False
-                for col in df_full.columns:
-                    try:
-                        numeric_val = pd.to_numeric(df_full.iloc[0][col], errors='coerce')
-                        if pd.notna(numeric_val):
-                            numeric_test_passed = True
-                            break
-                    except (ValueError, TypeError):
-                        continue
-                
-                if numeric_test_passed:
-                    # If we found numeric data in first row, no units row to skip
-                    df = df_full
-                else:
-                    # If no numeric data found in first row, assume it's a units row and skip it
-                    df = df_full.iloc[1:].reset_index(drop=True)
-            else:
-                df = df_full
+            # Get available channels (column names)
+            self.available_channels = df.columns.tolist()
             
+            # Store the dataframe
             self.vehicle_data = df
-            self.available_channels = list(df.columns)
             
-            # Update combo boxes
+            # Update channel comboboxes
             self.rpm_combo['values'] = self.available_channels
             self.etasp_combo['values'] = self.available_channels
             
-            self.log_status(f"CSV vehicle file loaded with {len(df)} rows and {len(df.columns)} channels")
-            self.log_status(f"Available channels: {', '.join(self.available_channels[:10])}{'...' if len(self.available_channels) > 10 else ''}")
+            self.log_status(f"CSV vehicle file loaded successfully. Found {len(self.available_channels)} channels.")
             
         except Exception as e:
             raise Exception(f"Error loading CSV vehicle file: {str(e)}")
-            
+
     def load_mdf_vehicle_file(self):
-        """Load MDF/DAT/MF4 vehicle file"""
+        """Load MDF/MF4/DAT vehicle file using the exact same logic as Fuel_Consumption_Eval_Tool"""
         try:
+            # Load MDF file
             mdf = MDF(self.vehicle_file_path)
-            self.vehicle_data = mdf
-            self.available_channels = list(mdf.channels_db.keys())
             
-            # Update combo boxes
+            # Get available channels
+            self.available_channels = []
+            for group_index in range(len(mdf.groups)):
+                for channel in mdf.groups[group_index].channels:
+                    self.available_channels.append(channel.name)
+            
+            # Store the MDF object
+            self.vehicle_data = mdf
+            
+            # Update channel comboboxes
             self.rpm_combo['values'] = self.available_channels
             self.etasp_combo['values'] = self.available_channels
             
-            self.log_status(f"MDF vehicle file loaded with {len(self.available_channels)} channels")
-            self.log_status(f"Available channels: {', '.join(self.available_channels[:10])}{'...' if len(self.available_channels) > 10 else ''}")
+            self.log_status(f"MDF vehicle file loaded successfully. Found {len(self.available_channels)} channels.")
             
         except Exception as e:
             raise Exception(f"Error loading MDF vehicle file: {str(e)}")
+        
+    def process_and_append(self):
+        """Process the vehicle data and append the calculated channel"""
+        if not self.surface_data:
+            messagebox.showerror("Error", "Please select and configure a surface table CSV file first!")
+            return
             
-    def interpolate_z_values(self, rpm_values, etasp_values):
-        """Interpolate Z values using CSV surface table"""
-        if self.csv_data is None:
-            raise ValueError("No CSV surface table loaded")
+        if not self.vehicle_data:
+            messagebox.showerror("Error", "Please select a vehicle log file!")
+            return
+            
+        if not self.rpm_channel.get() or not self.etasp_channel.get():
+            messagebox.showerror("Error", "Please select both RPM and ETASP channels!")
+            return
             
         try:
-            # Create points for interpolation
-            points = np.column_stack((self.csv_data['rpm'], self.csv_data['etasp']))
-            values = self.csv_data['z']
-            
-            # Create target points
-            target_points = np.column_stack((rpm_values, etasp_values))
-            
-            # Interpolate using linear method first, then nearest for NaN values
-            interpolated_z = griddata(points, values, target_points, method='linear', fill_value=np.nan)
-            
-            # Fill NaN values with nearest neighbor interpolation
-            nan_mask = np.isnan(interpolated_z)
-            if np.any(nan_mask):
-                interpolated_z_nearest = griddata(points, values, target_points, method='nearest')
-                interpolated_z[nan_mask] = interpolated_z_nearest[nan_mask]
-                
-            return interpolated_z
-            
-        except Exception as e:
-            raise Exception(f"Error during interpolation: {str(e)}")
-            
-    def process_and_export(self):
-        """Main processing function"""
-        try:
-            # Validate inputs
-            if not self.csv_surface_path:
-                messagebox.showerror("Error", "Please select a CSV surface table first")
-                return
-                
-            if not self.vehicle_file_path:
-                messagebox.showerror("Error", "Please select a vehicle log file")
-                return
-                
-            if not self.rpm_channel.get():
-                messagebox.showerror("Error", "Please select RPM channel")
-                return
-                
-            if not self.etasp_channel.get():
-                messagebox.showerror("Error", "Please select ETASP channel")
-                return
-                
-            if not self.new_channel_name.get():
-                messagebox.showerror("Error", "Please provide a name for the new channel")
-                return
-                
             self.log_status("Starting processing...")
             
-            # Process based on file type
+            # Extract data based on file type
             file_ext = Path(self.vehicle_file_path).suffix.lower()
             
             if file_ext == '.csv':
-                self.process_csv_vehicle_file()
-            else:
-                self.process_mdf_vehicle_file()
-                
+                rpm_data = pd.to_numeric(self.vehicle_data[self.rpm_channel.get()], errors='coerce')
+                etasp_data = pd.to_numeric(self.vehicle_data[self.etasp_channel.get()], errors='coerce')
+            else:  # MDF/MF4/DAT
+                rpm_signal = self.vehicle_data.get(self.rpm_channel.get())
+                etasp_signal = self.vehicle_data.get(self.etasp_channel.get())
+                rpm_data = rpm_signal.samples
+                etasp_data = etasp_signal.samples
+            
+            # Get surface table data
+            x_values, y_values, z_matrix = self.surface_data
+            
+            # Interpolate Z values for each point
+            z_interpolated = []
+            valid_points = 0
+            total_points = len(rpm_data)
+            
+            for i, (rpm, etasp) in enumerate(zip(rpm_data, etasp_data)):
+                if pd.notna(rpm) and pd.notna(etasp):
+                    # Find the interpolated Z value
+                    z_val = self.interpolate_z_value(rpm, etasp, x_values, y_values, z_matrix)
+                    z_interpolated.append(z_val)
+                    if not np.isnan(z_val):
+                        valid_points += 1
+                else:
+                    z_interpolated.append(np.nan)
+            
+            self.log_status(f"Interpolated {valid_points}/{total_points} valid points")
+            
+            # Append the calculated channel
+            self.append_calculated_channel(z_interpolated)
+            
         except Exception as e:
             messagebox.showerror("Error", f"Processing failed: {str(e)}")
-            self.log_status(f"Processing failed: {str(e)}")
-            
-    def process_csv_vehicle_file(self):
-        """Process CSV vehicle file"""
+            self.log_status(f"Processing error: {str(e)}")
+    
+    def interpolate_z_value(self, rpm, etasp, x_values, y_values, z_matrix):
+        """Interpolate Z value for given RPM and ETASP using bilinear interpolation"""
         try:
-            df = self.vehicle_data.copy()
+            # Convert to numpy arrays for easier handling
+            x_values = np.array(x_values)
+            y_values = np.array(y_values)
             
-            # Get RPM and ETASP data
-            rpm_data = df[self.rpm_channel.get()].values
-            etasp_data = df[self.etasp_channel.get()].values
+            # Check if point is within bounds
+            if rpm < x_values.min() or rpm > x_values.max() or etasp < y_values.min() or etasp > y_values.max():
+                # Use nearest neighbor for out-of-bounds points
+                x_idx = np.argmin(np.abs(x_values - rpm))
+                y_idx = np.argmin(np.abs(y_values - etasp))
+                return z_matrix[y_idx, x_idx]
             
-            self.log_status(f"Processing {len(rpm_data)} data points...")
+            # Find surrounding points for bilinear interpolation
+            x_idx = np.searchsorted(x_values, rpm, side='right') - 1
+            y_idx = np.searchsorted(y_values, etasp, side='right') - 1
             
-            # Interpolate Z values
-            calculated_z = self.interpolate_z_values(rpm_data, etasp_data)
+            # Ensure indices are within bounds
+            x_idx = max(0, min(x_idx, len(x_values) - 2))
+            y_idx = max(0, min(y_idx, len(y_values) - 2))
             
-            # Add new column
-            df[self.new_channel_name.get()] = calculated_z
+            # Get the four surrounding points
+            x1, x2 = x_values[x_idx], x_values[x_idx + 1]
+            y1, y2 = y_values[y_idx], y_values[y_idx + 1]
             
-            # Save to new file
-            output_path = self.get_output_path('.csv')
-            df.to_csv(output_path, index=False)
+            z11 = z_matrix[y_idx, x_idx]
+            z12 = z_matrix[y_idx + 1, x_idx]
+            z21 = z_matrix[y_idx, x_idx + 1]
+            z22 = z_matrix[y_idx + 1, x_idx + 1]
             
-            self.log_status(f"Successfully saved CSV file with new channel: {output_path}")
-            messagebox.showinfo("Success", f"File saved successfully:\n{output_path}")
+            # Check for NaN values and use nearest neighbor if needed
+            if np.isnan([z11, z12, z21, z22]).any():
+                # Find the nearest non-NaN value
+                distances = []
+                values = []
+                for i, z_val in enumerate([z11, z12, z21, z22]):
+                    if not np.isnan(z_val):
+                        if i == 0:
+                            dist = np.sqrt((rpm - x1)**2 + (etasp - y1)**2)
+                        elif i == 1:
+                            dist = np.sqrt((rpm - x1)**2 + (etasp - y2)**2)
+                        elif i == 2:
+                            dist = np.sqrt((rpm - x2)**2 + (etasp - y1)**2)
+                        else:
+                            dist = np.sqrt((rpm - x2)**2 + (etasp - y2)**2)
+                        distances.append(dist)
+                        values.append(z_val)
+                
+                if values:
+                    return values[np.argmin(distances)]
+                else:
+                    return np.nan
+            
+            # Bilinear interpolation
+            # Interpolate in x direction
+            z_x1 = z11 * (x2 - rpm) / (x2 - x1) + z21 * (rpm - x1) / (x2 - x1)
+            z_x2 = z12 * (x2 - rpm) / (x2 - x1) + z22 * (rpm - x1) / (x2 - x1)
+            
+            # Interpolate in y direction
+            z_interpolated = z_x1 * (y2 - etasp) / (y2 - y1) + z_x2 * (etasp - y1) / (y2 - y1)
+            
+            return z_interpolated
             
         except Exception as e:
-            raise Exception(f"Error processing CSV file: {str(e)}")
-            
-    def process_mdf_vehicle_file(self):
-        """Process MDF/DAT/MF4 vehicle file"""
+            print(f"Interpolation error: {e}")
+            return np.nan
+    
+    def append_calculated_channel(self, z_values):
+        """Append the calculated channel to the original file"""
+        file_ext = Path(self.vehicle_file_path).suffix.lower()
+        
         try:
-            mdf = self.vehicle_data
-            
-            # Get RPM and ETASP signals
-            rpm_signal = mdf.get(self.rpm_channel.get())
-            etasp_signal = mdf.get(self.etasp_channel.get())
-            
-            self.log_status(f"Processing signals with {len(rpm_signal.samples)} RPM and {len(etasp_signal.samples)} ETASP samples...")
-            
-            # Create common time base
-            start_time = max(rpm_signal.timestamps[0], etasp_signal.timestamps[0])
-            end_time = min(rpm_signal.timestamps[-1], etasp_signal.timestamps[-1])
-            
-            # Use the rpm signal timestamps as base (or create regular intervals)
-            if len(rpm_signal.timestamps) <= len(etasp_signal.timestamps):
-                time_base = rpm_signal.timestamps
-                rpm_resampled = rpm_signal.samples
-                etasp_resampled = np.interp(time_base, etasp_signal.timestamps, etasp_signal.samples)
-            else:
-                time_base = etasp_signal.timestamps
-                etasp_resampled = etasp_signal.samples
-                rpm_resampled = np.interp(time_base, rpm_signal.timestamps, rpm_signal.samples)
-            
-            # Filter to common time range
-            time_mask = (time_base >= start_time) & (time_base <= end_time)
-            time_base = time_base[time_mask]
-            rpm_resampled = rpm_resampled[time_mask]
-            etasp_resampled = etasp_resampled[time_mask]
-            
-            self.log_status(f"Using {len(time_base)} synchronized time points...")
-            
-            # Interpolate Z values
-            calculated_z = self.interpolate_z_values(rpm_resampled, etasp_resampled)
-            
-            # Create new signal
-            new_signal = Signal(
-                samples=calculated_z,
-                timestamps=time_base,
-                name=self.new_channel_name.get(),
-                unit='units'
-            )
-            
-            # Add signal to MDF
-            mdf.append(new_signal)
-            
-            # Save to new file
-            output_path = self.get_output_path(Path(self.vehicle_file_path).suffix)
-            mdf.save(output_path, overwrite=True)
-            
-            self.log_status(f"Successfully saved MDF file with new channel: {output_path}")
-            messagebox.showinfo("Success", f"File saved successfully:\n{output_path}")
-            
-            # Close the MDF file
-            mdf.close()
+            if file_ext == '.csv':
+                self.append_to_csv(z_values)
+            else:  # MDF/MF4/DAT
+                self.append_to_mdf(z_values)
+                
+            self.log_status("Channel appended successfully!")
+            messagebox.showinfo("Success", f"Channel '{self.new_channel_name.get()}' has been appended to the file!")
             
         except Exception as e:
-            raise Exception(f"Error processing MDF file: {str(e)}")
-            
-    def get_output_path(self, extension):
-        """Generate output file path"""
-        input_path = Path(self.vehicle_file_path)
-        output_filename = f"{input_path.stem}_with_{self.new_channel_name.get()}{extension}"
-        output_path = input_path.parent / output_filename
+            raise Exception(f"Failed to append channel: {str(e)}")
+    
+    def append_to_csv(self, z_values):
+        """Append calculated channel to CSV file"""
+        # Add the new column to the dataframe
+        self.vehicle_data[self.new_channel_name.get()] = z_values
         
-        # If file exists, add number suffix
-        counter = 1
-        while output_path.exists():
-            output_filename = f"{input_path.stem}_with_{self.new_channel_name.get()}_{counter}{extension}"
-            output_path = input_path.parent / output_filename
-            counter += 1
-            
-        return str(output_path)
+        # Create output filename
+        base_name = Path(self.vehicle_file_path).stem
+        output_path = Path(self.vehicle_file_path).parent / f"{base_name}_with_{self.new_channel_name.get()}.csv"
         
+        # Save the updated dataframe
+        self.vehicle_data.to_csv(output_path, index=False)
+        
+        self.log_status(f"Updated CSV saved as: {output_path}")
+    
+    def append_to_mdf(self, z_values):
+        """Append calculated channel to MDF file"""
+        # Get time data from the first available signal for timing reference
+        rpm_signal = self.vehicle_data.get(self.rpm_channel.get())
+        time_data = rpm_signal.timestamps
+        
+        # Create new signal with calculated values
+        new_signal = Signal(
+            samples=np.array(z_values, dtype=np.float64),
+            timestamps=time_data,
+            name=self.new_channel_name.get(),
+            unit="",  # Add appropriate unit if needed
+        )
+        
+        # Create output filename
+        base_name = Path(self.vehicle_file_path).stem
+        output_path = Path(self.vehicle_file_path).parent / f"{base_name}_with_{self.new_channel_name.get()}.mf4"
+        
+        # Create a new MDF file with all original signals plus the new one
+        with MDF() as new_mdf:
+            # Copy all original signals
+            for group_index in range(len(self.vehicle_data.groups)):
+                for channel in self.vehicle_data.groups[group_index].channels:
+                    signal = self.vehicle_data.get(channel.name)
+                    new_mdf.append(signal)
+            
+            # Add the new calculated signal
+            new_mdf.append(new_signal)
+            
+            # Save the new file
+            new_mdf.save(output_path, overwrite=True)
+        
+        self.log_status(f"Updated MDF saved as: {output_path}")
+    
+    def log_status(self, message):
+        """Add a message to the status log"""
+        self.log_text.insert(tk.END, f"{message}\n")
+        self.log_text.see(tk.END)
+        self.root.update()
+    
     def run(self):
         """Start the application"""
         self.root.mainloop()

@@ -18,6 +18,47 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 import os
 from scipy.interpolate import griddata
+
+
+class AutocompleteCombobox(ttk.Combobox):
+    """A Combobox with autocompletion support."""
+    def set_completion_list(self, completion_list):
+        self._completion_list = sorted(completion_list, key=str.lower)
+        self._hits = []
+        self._hit_index = 0
+        self.position = 0
+        self['values'] = self._completion_list
+        self.bind('<KeyRelease>', self.handle_keyrelease)
+
+    def autocomplete(self, delta=0):
+        if delta:
+            self.delete(self.position, tk.END)
+        else:
+            self.position = len(self.get())
+
+        _hits = []
+        for element in self._completion_list:
+            if element.lower().startswith(self.get().lower()):
+                _hits.append(element)
+
+        if _hits != self._hits:
+            self._hit_index = 0
+            self._hits = _hits
+
+        if self._hits:
+            self.delete(0, tk.END)
+            self.insert(0, self._hits[self._hit_index])
+            self.select_range(self.position, tk.END)
+
+    def handle_keyrelease(self, event):
+        if event.keysym == "BackSpace":
+            self.position = self.index(tk.END)
+        if event.keysym == "Left":
+            self.position -= 1
+        if event.keysym == "Right":
+            self.position = self.index(tk.END)
+        if len(event.keysym) == 1:
+            self.autocomplete()
 import tempfile
 import shutil
 from pathlib import Path
@@ -99,16 +140,14 @@ class VehicleLogChannelAppender:
         rpm_frame = tk.Frame(params_frame)
         rpm_frame.pack(fill="x", pady=2)
         tk.Label(rpm_frame, text="RPM Channel:", width=15, anchor="w").pack(side="left")
-        self.rpm_combo = ttk.Combobox(rpm_frame, textvariable=self.rpm_channel, 
-                                     state="readonly", width=30)
+        self.rpm_combo = AutocompleteCombobox(rpm_frame, textvariable=self.rpm_channel, width=30)
         self.rpm_combo.pack(side="left", padx=5)
         
         # ETASP Channel selection
         etasp_frame = tk.Frame(params_frame)
         etasp_frame.pack(fill="x", pady=2)
         tk.Label(etasp_frame, text="ETASP Channel:", width=15, anchor="w").pack(side="left")
-        self.etasp_combo = ttk.Combobox(etasp_frame, textvariable=self.etasp_channel, 
-                                       state="readonly", width=30)
+        self.etasp_combo = AutocompleteCombobox(etasp_frame, textvariable=self.etasp_channel, width=30)
         self.etasp_combo.pack(side="left", padx=5)
         
         # New channel name
@@ -548,8 +587,8 @@ class VehicleLogChannelAppender:
             self.vehicle_data = df
             
             # Update channel comboboxes
-            self.rpm_combo['values'] = self.available_channels
-            self.etasp_combo['values'] = self.available_channels
+            self.rpm_combo.set_completion_list(self.available_channels)
+            self.etasp_combo.set_completion_list(self.available_channels)
             
             self.log_status(f"CSV vehicle file loaded successfully. Found {len(self.available_channels)} channels.")
             
@@ -572,8 +611,8 @@ class VehicleLogChannelAppender:
             self.vehicle_data = mdf
             
             # Update channel comboboxes
-            self.rpm_combo['values'] = self.available_channels
-            self.etasp_combo['values'] = self.available_channels
+            self.rpm_combo.set_completion_list(self.available_channels)
+            self.etasp_combo.set_completion_list(self.available_channels)
             
             self.log_status(f"MDF vehicle file loaded successfully. Found {len(self.available_channels)} channels.")
             

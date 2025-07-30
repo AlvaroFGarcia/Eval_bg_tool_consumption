@@ -76,6 +76,7 @@ class VehicleLogChannelAppender:
         self.vehicle_data = None
         self.surface_data = None  # This will store the loaded surface table (x_values, y_values, z_matrix)
         self.available_channels = []
+        self.reference_timestamps = None  # Store reference timestamps for MDF files
         
         # Selected parameters
         self.rpm_channel = tk.StringVar()
@@ -647,6 +648,15 @@ class VehicleLogChannelAppender:
                 etasp_signal = self.vehicle_data.get(self.etasp_channel.get())
                 rpm_data = rpm_signal.samples
                 etasp_data = etasp_signal.samples
+                
+                # Check if signals have the same length
+                if len(rpm_data) != len(etasp_data):
+                    raise Exception(f"RPM and ETASP signals have different lengths: RPM={len(rpm_data)}, ETASP={len(etasp_data)}")
+                
+                # Store the timestamp information for later use
+                self.reference_timestamps = rpm_signal.timestamps
+                if len(self.reference_timestamps) != len(rpm_data):
+                    raise Exception(f"RPM signal timestamps and samples length mismatch: timestamps={len(self.reference_timestamps)}, samples={len(rpm_data)}")
             
             # Get surface table data
             x_values, y_values, z_matrix = self.surface_data
@@ -666,7 +676,12 @@ class VehicleLogChannelAppender:
                 else:
                     z_interpolated.append(np.nan)
             
+            # Ensure z_interpolated has the same length as the input data
+            if len(z_interpolated) != total_points:
+                raise Exception(f"Length mismatch: z_interpolated has {len(z_interpolated)} elements but input data has {total_points} elements")
+            
             self.log_status(f"Interpolated {valid_points}/{total_points} valid points")
+            self.log_status(f"Generated {len(z_interpolated)} interpolated values for {total_points} input samples")
             
             # Append the calculated channel
             self.append_calculated_channel(z_interpolated)
@@ -775,9 +790,15 @@ class VehicleLogChannelAppender:
     
     def append_to_mdf(self, z_values):
         """Append calculated channel to MDF file"""
-        # Get time data from the first available signal for timing reference
-        rpm_signal = self.vehicle_data.get(self.rpm_channel.get())
-        time_data = rpm_signal.timestamps
+        # Use the reference timestamps stored during processing
+        if self.reference_timestamps is None:
+            raise Exception("Reference timestamps not available. This method should only be called for MDF files.")
+        
+        time_data = self.reference_timestamps
+        
+        # Ensure timestamps and z_values have the same length
+        if len(time_data) != len(z_values):
+            raise Exception(f"{self.new_channel_name.get()} samples and timestamps length mismatch ({len(z_values)} vs {len(time_data)})")
         
         # Create new signal with calculated values
         new_signal = Signal(

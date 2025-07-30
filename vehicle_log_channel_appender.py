@@ -166,27 +166,27 @@ class VehicleLogChannelAppender:
                 self.log_status(f"Error loading CSV: {str(e)}")
                 
     def load_csv_surface_table(self):
-        """Load and parse CSV surface table using the same logic as Fuel_Consumption_Eval_Tool"""
+        """Load and parse CSV surface table using the exact same logic as Fuel_Consumption_Eval_Tool"""
         try:
-            # Read CSV file with headers, then handle units row if present
+            # Read the CSV file with headers, then handle units row if present - EXACTLY like Fuel_Consumption_Eval_Tool
             df_full = pd.read_csv(self.csv_surface_path)
             
-            # Try to detect format - assume first 3 columns are RPM, ETASP, Z
+            # Check if we have at least 3 columns
             if len(df_full.columns) < 3:
-                raise ValueError("CSV must have at least 3 columns (RPM, ETASP, Z)")
+                raise ValueError("CSV must have at least 3 columns (X, Y, Z)")
             
-            # Get first three columns
-            rpm_col = df_full.columns[0]
-            etasp_col = df_full.columns[1]
+            # Use first three columns as X (RPM), Y (ETASP), Z columns
+            x_col = df_full.columns[0]
+            y_col = df_full.columns[1] 
             z_col = df_full.columns[2]
             
-            # Remove the units row if present (same logic as Fuel_Consumption_Eval_Tool)
+            # Remove the units row if present (EXACT same logic as Fuel_Consumption_Eval_Tool)
             if len(df_full) > 0:
                 # Check if the first row contains units (non-numeric data in numeric columns)
                 try:
                     # Try to convert the first data row to numeric
-                    pd.to_numeric(df_full.iloc[0][rpm_col])
-                    pd.to_numeric(df_full.iloc[0][etasp_col]) 
+                    pd.to_numeric(df_full.iloc[0][x_col])
+                    pd.to_numeric(df_full.iloc[0][y_col]) 
                     pd.to_numeric(df_full.iloc[0][z_col])
                     # If successful, no units row to skip
                     df = df_full
@@ -196,39 +196,42 @@ class VehicleLogChannelAppender:
             else:
                 df = df_full
             
-            # Extract valid data points using the same approach as Fuel_Consumption_Eval_Tool
+            # Extract valid data points using EXACT same approach as Fuel_Consumption_Eval_Tool
             valid_data = []
             for idx, row in df.iterrows():
                 try:
-                    rpm_val = pd.to_numeric(row[rpm_col], errors='coerce')
-                    etasp_val = pd.to_numeric(row[etasp_col], errors='coerce') 
+                    x_val = pd.to_numeric(row[x_col], errors='coerce')
+                    y_val = pd.to_numeric(row[y_col], errors='coerce') 
                     z_val = pd.to_numeric(row[z_col], errors='coerce')
                     
-                    if pd.notna(rpm_val) and pd.notna(etasp_val) and pd.notna(z_val):
-                        valid_data.append([rpm_val, etasp_val, z_val])
+                    # EXACT same logic: check if all three values are valid numbers
+                    if pd.notna(x_val) and pd.notna(y_val) and pd.notna(z_val):
+                        valid_data.append([x_val, y_val, z_val])
                 except (ValueError, TypeError, KeyError):
-                    continue  # Skip invalid rows
+                    continue  # Skip invalid rows - handles "**" and other non-numeric data
             
+            # Use EXACT same error handling as Fuel_Consumption_Eval_Tool
             if not valid_data:
-                raise ValueError("No valid data points found in CSV file. All rows contain NaN values or could not be parsed. "
-                               f"Please check that your CSV file contains numeric data in columns: {rpm_col}, {etasp_col}, {z_col}")
+                raise ValueError("No valid data points found in CSV file")
             
-            # Convert to numpy array and extract columns
+            # Convert to numpy array and extract columns - EXACT same as Fuel_Consumption_Eval_Tool
             valid_data = np.array(valid_data)
-            rpm_data = valid_data[:, 0]
-            etasp_data = valid_data[:, 1]
-            z_data = valid_data[:, 2]
+            x_data = valid_data[:, 0]  # RPM data
+            y_data = valid_data[:, 1]  # ETASP data  
+            z_data = valid_data[:, 2]  # Z data
             
+            # Store the data using the same structure expected by interpolation
             self.csv_data = {
-                'rpm': rpm_data,
-                'etasp': etasp_data,
+                'rpm': x_data,
+                'etasp': y_data,
                 'z': z_data
             }
             
             # Log data info for debugging
             self.log_status(f"CSV data loaded with {len(valid_data)} valid points")
-            self.log_status(f"RPM range: {rpm_data.min():.2f} - {rpm_data.max():.2f}")
-            self.log_status(f"ETASP range: {etasp_data.min():.2f} - {etasp_data.max():.2f}")
+            self.log_status(f"Columns used: X='{x_col}', Y='{y_col}', Z='{z_col}'")
+            self.log_status(f"X (RPM) range: {x_data.min():.2f} - {x_data.max():.2f}")
+            self.log_status(f"Y (ETASP) range: {y_data.min():.2f} - {y_data.max():.2f}")
             self.log_status(f"Z range: {z_data.min():.2f} - {z_data.max():.2f}")
             
         except Exception as e:
@@ -268,20 +271,20 @@ class VehicleLogChannelAppender:
             self.load_mdf_vehicle_file()
             
     def load_csv_vehicle_file(self):
-        """Load CSV vehicle file using the same logic as Fuel_Consumption_Eval_Tool"""
+        """Load CSV vehicle file using the exact same logic as Fuel_Consumption_Eval_Tool"""
         try:
-            # Read CSV file with headers, then handle units row if present
+            # Read the CSV file with headers, then handle units row if present - EXACTLY like Fuel_Consumption_Eval_Tool
             df_full = pd.read_csv(self.vehicle_file_path)
             
-            # Remove the units row if present (same logic as Fuel_Consumption_Eval_Tool)
+            # Remove the units row if present (EXACT same logic as Fuel_Consumption_Eval_Tool)
             if len(df_full) > 0:
                 # Check if the first row contains units (non-numeric data)
-                # Try to find at least one numeric column to test
+                # Try to find at least one numeric column to test - EXACT same logic
                 numeric_test_passed = False
                 for col in df_full.columns:
                     try:
-                        pd.to_numeric(df_full.iloc[0][col], errors='coerce')
-                        if pd.notna(pd.to_numeric(df_full.iloc[0][col], errors='coerce')):
+                        numeric_val = pd.to_numeric(df_full.iloc[0][col], errors='coerce')
+                        if pd.notna(numeric_val):
                             numeric_test_passed = True
                             break
                     except (ValueError, TypeError):

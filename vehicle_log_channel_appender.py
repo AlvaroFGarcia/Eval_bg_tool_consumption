@@ -166,7 +166,7 @@ class VehicleLogChannelAppender:
                 self.log_status(f"Error loading CSV: {str(e)}")
                 
     def load_csv_surface_table(self):
-        """Load and parse CSV surface table"""
+        """Load and parse CSV surface table using the same logic as Fuel_Consumption_Eval_Tool"""
         try:
             # Read CSV file with headers, then handle units row if present
             df_full = pd.read_csv(self.csv_surface_path)
@@ -196,42 +196,40 @@ class VehicleLogChannelAppender:
             else:
                 df = df_full
             
-            # Extract and convert data
-            rpm_data = pd.to_numeric(df[rpm_col], errors='coerce')
-            etasp_data = pd.to_numeric(df[etasp_col], errors='coerce')
-            z_data = pd.to_numeric(df[z_col], errors='coerce')
+            # Extract valid data points using the same approach as Fuel_Consumption_Eval_Tool
+            valid_data = []
+            for idx, row in df.iterrows():
+                try:
+                    rpm_val = pd.to_numeric(row[rpm_col], errors='coerce')
+                    etasp_val = pd.to_numeric(row[etasp_col], errors='coerce') 
+                    z_val = pd.to_numeric(row[z_col], errors='coerce')
+                    
+                    if pd.notna(rpm_val) and pd.notna(etasp_val) and pd.notna(z_val):
+                        valid_data.append([rpm_val, etasp_val, z_val])
+                except (ValueError, TypeError, KeyError):
+                    continue  # Skip invalid rows
             
-            self.csv_data = {
-                'rpm': rpm_data.values,
-                'etasp': etasp_data.values,
-                'z': z_data.values
-            }
-            
-            # Log initial data info for debugging
-            self.log_status(f"Initial data loaded: {len(self.csv_data['rpm'])} rows")
-            self.log_status(f"RPM NaN count: {np.sum(np.isnan(self.csv_data['rpm']))}")
-            self.log_status(f"ETASP NaN count: {np.sum(np.isnan(self.csv_data['etasp']))}")
-            self.log_status(f"Z NaN count: {np.sum(np.isnan(self.csv_data['z']))}")
-            
-            # Remove any NaN values
-            valid_mask = ~(np.isnan(self.csv_data['rpm']) | 
-                          np.isnan(self.csv_data['etasp']) | 
-                          np.isnan(self.csv_data['z']))
-            
-            self.csv_data['rpm'] = self.csv_data['rpm'][valid_mask]
-            self.csv_data['etasp'] = self.csv_data['etasp'][valid_mask]
-            self.csv_data['z'] = self.csv_data['z'][valid_mask]
-            
-            # Check if we have any valid data points
-            num_valid_points = len(self.csv_data['rpm'])
-            if num_valid_points == 0:
+            if not valid_data:
                 raise ValueError("No valid data points found in CSV file. All rows contain NaN values or could not be parsed. "
                                f"Please check that your CSV file contains numeric data in columns: {rpm_col}, {etasp_col}, {z_col}")
             
-            self.log_status(f"CSV data loaded with {num_valid_points} valid points")
-            self.log_status(f"RPM range: {self.csv_data['rpm'].min():.2f} - {self.csv_data['rpm'].max():.2f}")
-            self.log_status(f"ETASP range: {self.csv_data['etasp'].min():.2f} - {self.csv_data['etasp'].max():.2f}")
-            self.log_status(f"Z range: {self.csv_data['z'].min():.2f} - {self.csv_data['z'].max():.2f}")
+            # Convert to numpy array and extract columns
+            valid_data = np.array(valid_data)
+            rpm_data = valid_data[:, 0]
+            etasp_data = valid_data[:, 1]
+            z_data = valid_data[:, 2]
+            
+            self.csv_data = {
+                'rpm': rpm_data,
+                'etasp': etasp_data,
+                'z': z_data
+            }
+            
+            # Log data info for debugging
+            self.log_status(f"CSV data loaded with {len(valid_data)} valid points")
+            self.log_status(f"RPM range: {rpm_data.min():.2f} - {rpm_data.max():.2f}")
+            self.log_status(f"ETASP range: {etasp_data.min():.2f} - {etasp_data.max():.2f}")
+            self.log_status(f"Z range: {z_data.min():.2f} - {z_data.max():.2f}")
             
         except Exception as e:
             raise Exception(f"Error parsing CSV surface table: {str(e)}")
@@ -270,21 +268,22 @@ class VehicleLogChannelAppender:
             self.load_mdf_vehicle_file()
             
     def load_csv_vehicle_file(self):
-        """Load CSV vehicle file"""
+        """Load CSV vehicle file using the same logic as Fuel_Consumption_Eval_Tool"""
         try:
-            # Read CSV file with headers, then handle units row if present (same as Fuel_Consumption_Eval_Tool)
+            # Read CSV file with headers, then handle units row if present
             df_full = pd.read_csv(self.vehicle_file_path)
             
-            # Remove the units row if present 
+            # Remove the units row if present (same logic as Fuel_Consumption_Eval_Tool)
             if len(df_full) > 0:
                 # Check if the first row contains units (non-numeric data)
                 # Try to find at least one numeric column to test
                 numeric_test_passed = False
                 for col in df_full.columns:
                     try:
-                        pd.to_numeric(df_full.iloc[0][col])
-                        numeric_test_passed = True
-                        break
+                        pd.to_numeric(df_full.iloc[0][col], errors='coerce')
+                        if pd.notna(pd.to_numeric(df_full.iloc[0][col], errors='coerce')):
+                            numeric_test_passed = True
+                            break
                     except (ValueError, TypeError):
                         continue
                 

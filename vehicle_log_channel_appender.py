@@ -162,6 +162,14 @@ class VehicleLogChannelAppender:
                                    font=("Arial", 12, "bold"))
         step4_frame.pack(fill="x", pady=5)
         
+        # Add explanation about raster handling
+        info_frame = tk.Frame(step4_frame)
+        info_frame.pack(fill="x", padx=10, pady=5)
+        
+        info_text = ("Note: For MDF/MF4/DAT files, you will be asked to specify a time raster\n"
+                    "to handle different sampling rates between RPM and ETASP channels.")
+        tk.Label(info_frame, text=info_text, font=("Arial", 9), fg="blue", justify="left").pack(anchor="w")
+        
         process_frame = tk.Frame(step4_frame)
         process_frame.pack(fill="x", padx=10, pady=10)
         
@@ -633,25 +641,54 @@ class VehicleLogChannelAppender:
         if not self.rpm_channel.get() or not self.etasp_channel.get():
             messagebox.showerror("Error", "Please select both RPM and ETASP channels!")
             return
-            
+        
+        # Extract data based on file type
+        file_ext = Path(self.vehicle_file_path).suffix.lower()
+        
+        # For MDF files, ask user for raster to handle different sampling rates
+        raster = None
+        if file_ext in ['.mdf', '.mf4', '.dat']:
+            raster = self.ask_for_raster()
+            if raster is None:  # User cancelled
+                self.log_status("Processing cancelled by user.")
+                return
+        
         try:
             self.log_status("Starting processing...")
-            
-            # Extract data based on file type
-            file_ext = Path(self.vehicle_file_path).suffix.lower()
             
             if file_ext == '.csv':
                 rpm_data = pd.to_numeric(self.vehicle_data[self.rpm_channel.get()], errors='coerce')
                 etasp_data = pd.to_numeric(self.vehicle_data[self.etasp_channel.get()], errors='coerce')
+                # For CSV, use the index as timestamps (assuming they are sequential)
+                self.reference_timestamps = np.arange(len(rpm_data), dtype=np.float64)
             else:  # MDF/MF4/DAT
-                rpm_signal = self.vehicle_data.get(self.rpm_channel.get())
-                etasp_signal = self.vehicle_data.get(self.etasp_channel.get())
+                # Use raster to get both signals at the same time base
+                if raster:
+                    self.log_status(f"Resampling signals to {raster}s raster...")
+                    # Get both signals with the same raster to ensure same time base
+                    rpm_signal = self.vehicle_data.get(self.rpm_channel.get(), raster=raster)
+                    etasp_signal = self.vehicle_data.get(self.etasp_channel.get(), raster=raster)
+                    
+                    self.log_status(f"RPM signal length after raster: {len(rpm_signal.samples)}")
+                    self.log_status(f"ETASP signal length after raster: {len(etasp_signal.samples)}")
+                else:
+                    # Get signals without raster (this will likely cause the length mismatch error)
+                    self.log_status("Warning: No raster specified - signals may have different lengths!")
+                    rpm_signal = self.vehicle_data.get(self.rpm_channel.get())
+                    etasp_signal = self.vehicle_data.get(self.etasp_channel.get())
+                    
+                    self.log_status(f"RPM signal length: {len(rpm_signal.samples)}")
+                    self.log_status(f"ETASP signal length: {len(etasp_signal.samples)}")
+                
                 rpm_data = rpm_signal.samples
                 etasp_data = etasp_signal.samples
                 
-                # Check if signals have the same length
+                # Both signals should now have the same length due to raster resampling
                 if len(rpm_data) != len(etasp_data):
-                    raise Exception(f"RPM and ETASP signals have different lengths: RPM={len(rpm_data)}, ETASP={len(etasp_data)}")
+                    if raster:
+                        raise Exception(f"RPM and ETASP signals still have different lengths after resampling to {raster}s raster: RPM={len(rpm_data)}, ETASP={len(etasp_data)}. This may indicate an issue with the raster resampling.")
+                    else:
+                        raise Exception(f"RPM and ETASP signals have different lengths: RPM={len(rpm_data)}, ETASP={len(etasp_data)}. Please specify a raster value to resample both signals to the same time base.")
                 
                 # Store the timestamp information for later use
                 self.reference_timestamps = rpm_signal.timestamps
@@ -800,12 +837,13 @@ class VehicleLogChannelAppender:
         if len(time_data) != len(z_values):
             raise Exception(f"{self.new_channel_name.get()} samples and timestamps length mismatch ({len(z_values)} vs {len(time_data)})")
         
-        # Create new signal with calculated values
+        # Create new signal with calculated values using the same timestamps as the input signals
         new_signal = Signal(
             samples=np.array(z_values, dtype=np.float64),
             timestamps=time_data,
             name=self.new_channel_name.get(),
             unit="",  # Add appropriate unit if needed
+            comment=f"Calculated using surface table interpolation from {self.rpm_channel.get()} and {self.etasp_channel.get()}"
         )
         
         # Create output filename
@@ -814,14 +852,26 @@ class VehicleLogChannelAppender:
         
         # Create a new MDF file with all original signals plus the new one
         with MDF() as new_mdf:
-            # Copy all original signals
+            # Copy all original signals with the same raster as the new signal to maintain consistency
             for group_index in range(len(self.vehicle_data.groups)):
+                group_signals = []
+                
+                # Get all channels from this group
                 for channel in self.vehicle_data.groups[group_index].channels:
-                    signal = self.vehicle_data.get(channel.name)
-                    new_mdf.append(signal)
+                    try:
+                        # Get signal with the same raster as our new signal (interpolated to same time base)
+                        signal = self.vehicle_data.get(channel.name, group=group_index, raster=new_signal.timestamps)
+                        group_signals.append(signal)
+                    except Exception as e:
+                        self.log_status(f"Warning: Could not get signal {channel.name}: {str(e)}")
+                        continue
+                
+                # Append the group with all its signals
+                if group_signals:
+                    new_mdf.append(group_signals, comment=f"Group {group_index} with resampled data")
             
-            # Add the new calculated signal
-            new_mdf.append(new_signal)
+            # Add the new calculated signal as a separate group to avoid conflicts
+            new_mdf.append([new_signal], comment="Calculated fuel consumption channel")
             
             # Save the new file
             new_mdf.save(output_path, overwrite=True)
@@ -837,6 +887,91 @@ class VehicleLogChannelAppender:
     def run(self):
         """Start the application"""
         self.root.mainloop()
+
+    def ask_for_raster(self):
+        """Ask user for raster value for resampling"""
+        raster_window = tk.Toplevel(self.root)
+        raster_window.title('Set Time Raster')
+        raster_window.geometry('480x320')
+        raster_window.grab_set()  # Make it modal
+        
+        tk.Label(raster_window, text='Time Raster Configuration', 
+                font=('TkDefaultFont', 14, 'bold')).pack(pady=10)
+        
+        tk.Label(raster_window, text='The RPM and ETASP signals have different sampling rates (rasters).\n'
+                                    'You need to specify a time raster (in seconds) to resample both signals\n'
+                                    'to the same time base for interpolation.\n\n'
+                                    'Choose a raster that is appropriate for your measurement data:', 
+                font=('TkDefaultFont', 10)).pack(pady=10)
+        
+        # Input frame
+        input_frame = tk.Frame(raster_window)
+        input_frame.pack(pady=10)
+        
+        tk.Label(input_frame, text='Raster (seconds):').grid(row=0, column=0, padx=5)
+        raster_var = tk.DoubleVar(value=0.01)  # Default 10ms - good for most automotive applications
+        raster_entry = tk.Entry(input_frame, textvariable=raster_var, width=15)
+        raster_entry.grid(row=0, column=1, padx=5)
+        
+        # Suggested values
+        suggestions_frame = tk.Frame(raster_window)
+        suggestions_frame.pack(pady=10)
+        
+        tk.Label(suggestions_frame, text='Common values for automotive measurements:', font=('TkDefaultFont', 9)).pack()
+        
+        buttons_frame = tk.Frame(suggestions_frame)
+        buttons_frame.pack()
+        
+        def set_raster(value):
+            raster_var.set(value)
+        
+        tk.Button(buttons_frame, text='1ms (0.001)', command=lambda: set_raster(0.001), width=12).pack(side='left', padx=2)
+        tk.Button(buttons_frame, text='10ms (0.01)', command=lambda: set_raster(0.01), width=12).pack(side='left', padx=2)
+        tk.Button(buttons_frame, text='100ms (0.1)', command=lambda: set_raster(0.1), width=12).pack(side='left', padx=2)
+        
+        # Add a second row for more options
+        buttons_frame2 = tk.Frame(suggestions_frame)
+        buttons_frame2.pack(pady=2)
+        
+        tk.Button(buttons_frame2, text='20ms (0.02)', command=lambda: set_raster(0.02), width=12).pack(side='left', padx=2)
+        tk.Button(buttons_frame2, text='50ms (0.05)', command=lambda: set_raster(0.05), width=12).pack(side='left', padx=2)
+        tk.Button(buttons_frame2, text='200ms (0.2)', command=lambda: set_raster(0.2), width=12).pack(side='left', padx=2)
+        
+        # Result variable
+        result = [None]
+        
+        def confirm_raster():
+            try:
+                raster_value = raster_var.get()
+                if raster_value <= 0:
+                    messagebox.showerror('Error', 'Raster value must be positive!')
+                    return
+                result[0] = raster_value
+                raster_window.destroy()
+            except tk.TclError:
+                messagebox.showerror('Error', 'Please enter a valid number!')
+        
+        def cancel_raster():
+            result[0] = None
+            raster_window.destroy()
+        
+        # Button frame
+        button_frame = tk.Frame(raster_window)
+        button_frame.pack(pady=20)
+        
+        tk.Button(button_frame, text='OK', command=confirm_raster, 
+                 bg='lightgreen', font=('TkDefaultFont', 10, 'bold')).pack(side='left', padx=10)
+        tk.Button(button_frame, text='Cancel', command=cancel_raster, 
+                 bg='lightcoral').pack(side='left', padx=10)
+        
+        # Focus on entry and bind Enter key
+        raster_entry.focus()
+        raster_entry.bind('<Return>', lambda e: confirm_raster())
+        
+        # Wait for window to close
+        raster_window.wait_window()
+        
+        return result[0]
 
 def main():
     """Main function"""

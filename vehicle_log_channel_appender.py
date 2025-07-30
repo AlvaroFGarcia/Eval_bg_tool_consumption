@@ -207,6 +207,12 @@ class VehicleLogChannelAppender:
                 'z': z_data.values
             }
             
+            # Log initial data info for debugging
+            self.log_status(f"Initial data loaded: {len(self.csv_data['rpm'])} rows")
+            self.log_status(f"RPM NaN count: {np.sum(np.isnan(self.csv_data['rpm']))}")
+            self.log_status(f"ETASP NaN count: {np.sum(np.isnan(self.csv_data['etasp']))}")
+            self.log_status(f"Z NaN count: {np.sum(np.isnan(self.csv_data['z']))}")
+            
             # Remove any NaN values
             valid_mask = ~(np.isnan(self.csv_data['rpm']) | 
                           np.isnan(self.csv_data['etasp']) | 
@@ -216,7 +222,13 @@ class VehicleLogChannelAppender:
             self.csv_data['etasp'] = self.csv_data['etasp'][valid_mask]
             self.csv_data['z'] = self.csv_data['z'][valid_mask]
             
-            self.log_status(f"CSV data loaded with {len(self.csv_data['rpm'])} valid points")
+            # Check if we have any valid data points
+            num_valid_points = len(self.csv_data['rpm'])
+            if num_valid_points == 0:
+                raise ValueError("No valid data points found in CSV file. All rows contain NaN values or could not be parsed. "
+                               f"Please check that your CSV file contains numeric data in columns: {rpm_col}, {etasp_col}, {z_col}")
+            
+            self.log_status(f"CSV data loaded with {num_valid_points} valid points")
             self.log_status(f"RPM range: {self.csv_data['rpm'].min():.2f} - {self.csv_data['rpm'].max():.2f}")
             self.log_status(f"ETASP range: {self.csv_data['etasp'].min():.2f} - {self.csv_data['etasp'].max():.2f}")
             self.log_status(f"Z range: {self.csv_data['z'].min():.2f} - {self.csv_data['z'].max():.2f}")

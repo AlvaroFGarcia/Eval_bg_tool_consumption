@@ -168,22 +168,43 @@ class VehicleLogChannelAppender:
     def load_csv_surface_table(self):
         """Load and parse CSV surface table"""
         try:
-            # Read CSV file
-            df = pd.read_csv(self.csv_surface_path)
+            # Read CSV file with headers, then handle units row if present
+            df_full = pd.read_csv(self.csv_surface_path)
             
             # Try to detect format - assume first 3 columns are RPM, ETASP, Z
-            if len(df.columns) < 3:
+            if len(df_full.columns) < 3:
                 raise ValueError("CSV must have at least 3 columns (RPM, ETASP, Z)")
             
             # Get first three columns
-            rpm_col = df.columns[0]
-            etasp_col = df.columns[1]
-            z_col = df.columns[2]
+            rpm_col = df_full.columns[0]
+            etasp_col = df_full.columns[1]
+            z_col = df_full.columns[2]
+            
+            # Remove the units row if present (same logic as Fuel_Consumption_Eval_Tool)
+            if len(df_full) > 0:
+                # Check if the first row contains units (non-numeric data in numeric columns)
+                try:
+                    # Try to convert the first data row to numeric
+                    pd.to_numeric(df_full.iloc[0][rpm_col])
+                    pd.to_numeric(df_full.iloc[0][etasp_col]) 
+                    pd.to_numeric(df_full.iloc[0][z_col])
+                    # If successful, no units row to skip
+                    df = df_full
+                except (ValueError, TypeError):
+                    # If conversion fails, skip the first row (units row)
+                    df = df_full.iloc[1:].reset_index(drop=True)
+            else:
+                df = df_full
+            
+            # Extract and convert data
+            rpm_data = pd.to_numeric(df[rpm_col], errors='coerce')
+            etasp_data = pd.to_numeric(df[etasp_col], errors='coerce')
+            z_data = pd.to_numeric(df[z_col], errors='coerce')
             
             self.csv_data = {
-                'rpm': df[rpm_col].values,
-                'etasp': df[etasp_col].values,
-                'z': df[z_col].values
+                'rpm': rpm_data.values,
+                'etasp': etasp_data.values,
+                'z': z_data.values
             }
             
             # Remove any NaN values
@@ -239,7 +260,31 @@ class VehicleLogChannelAppender:
     def load_csv_vehicle_file(self):
         """Load CSV vehicle file"""
         try:
-            df = pd.read_csv(self.vehicle_file_path)
+            # Read CSV file with headers, then handle units row if present (same as Fuel_Consumption_Eval_Tool)
+            df_full = pd.read_csv(self.vehicle_file_path)
+            
+            # Remove the units row if present 
+            if len(df_full) > 0:
+                # Check if the first row contains units (non-numeric data)
+                # Try to find at least one numeric column to test
+                numeric_test_passed = False
+                for col in df_full.columns:
+                    try:
+                        pd.to_numeric(df_full.iloc[0][col])
+                        numeric_test_passed = True
+                        break
+                    except (ValueError, TypeError):
+                        continue
+                
+                if numeric_test_passed:
+                    # If we found numeric data in first row, no units row to skip
+                    df = df_full
+                else:
+                    # If no numeric data found in first row, assume it's a units row and skip it
+                    df = df_full.iloc[1:].reset_index(drop=True)
+            else:
+                df = df_full
+            
             self.vehicle_data = df
             self.available_channels = list(df.columns)
             

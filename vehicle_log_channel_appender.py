@@ -1,10 +1,29 @@
+"""
+Vehicle Log Channel Appender - Multi-Channel Tool
+
+Enhanced Version with Advanced Raster Analysis and Interpolation
+
+Key Features:
+- Analyzes channel sampling rates and recommends minimum rasters
+- Shows per-channel analysis with limiting parameters
+- Implements linear interpolation for fine rasters below original data resolution
+- Enhanced raster selection dialog with warnings and recommendations
+- Supports processing at any raster by interpolating missing data points
+
+Recent Improvements:
+- Fixed issue where lower rasters wouldn't generate channels
+- Added automatic interpolation when target raster is finer than source data
+- Enhanced raster dialog shows recommended minimum and per-channel analysis
+- Better error handling and user feedback during processing
+"""
+
 import numpy as np
 import pandas as pd
 from asammdf import MDF, Signal
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 import os
-from scipy.interpolate import griddata
+from scipy.interpolate import griddata, interp1d
 import tempfile
 import shutil
 from pathlib import Path
@@ -678,48 +697,259 @@ class VehicleLogChannelAppender:
             print(f"Interpolation error: {e}")
             return np.nan
 
+    def analyze_channel_sampling_rates(self):
+        """Analyze sampling rates of all channels used in custom channel configurations"""
+        if not self.vehicle_data or not self.custom_channels:
+            return {}
+        
+        file_ext = Path(self.vehicle_file_path).suffix.lower()
+        channel_analysis = {}
+        
+        # Get all unique channels used in custom configurations
+        used_channels = set()
+        for config in self.custom_channels:
+            used_channels.add(config['vehicle_x_channel'])
+            used_channels.add(config['vehicle_y_channel'])
+        
+        try:
+            if file_ext in ['.mdf', '.mf4', '.dat']:
+                for channel_name in used_channels:
+                    try:
+                        # Get channel info without raster to see original sampling
+                        signal = self.vehicle_data.get(channel_name)
+                        if signal is not None and len(signal.timestamps) > 1:
+                            # Calculate sampling statistics
+                            time_diffs = np.diff(signal.timestamps)
+                            min_interval = np.min(time_diffs[time_diffs > 0])
+                            avg_interval = np.mean(time_diffs)
+                            max_interval = np.max(time_diffs)
+                            
+                            # Calculate suggested minimum raster (slightly larger than minimum interval)
+                            suggested_min_raster = min_interval * 1.1
+                            
+                            channel_analysis[channel_name] = {
+                                'min_interval': min_interval,
+                                'avg_interval': avg_interval,
+                                'max_interval': max_interval,
+                                'suggested_min_raster': suggested_min_raster,
+                                'sample_count': len(signal.samples),
+                                'duration': signal.timestamps[-1] - signal.timestamps[0]
+                            }
+                        else:
+                            channel_analysis[channel_name] = {
+                                'error': 'Channel not found or empty'
+                            }
+                    except Exception as e:
+                        channel_analysis[channel_name] = {
+                            'error': str(e)
+                        }
+            else:  # CSV files don't have timestamp info
+                for channel_name in used_channels:
+                    if channel_name in self.vehicle_data.columns:
+                        channel_analysis[channel_name] = {
+                            'sample_count': len(self.vehicle_data),
+                            'note': 'CSV file - no timing information available'
+                        }
+                    else:
+                        channel_analysis[channel_name] = {
+                            'error': 'Channel not found in CSV'
+                        }
+        except Exception as e:
+            self.log_status(f"Error analyzing channel sampling rates: {str(e)}")
+        
+        return channel_analysis
+
+    def get_interpolated_signal_data(self, channel_name, target_raster):
+        """Get signal data with interpolation if needed for target raster"""
+        file_ext = Path(self.vehicle_file_path).suffix.lower()
+        
+        if file_ext == '.csv':
+            # For CSV files, just return the data as-is
+            data = pd.to_numeric(self.vehicle_data[channel_name], errors='coerce')
+            timestamps = np.arange(len(data), dtype=np.float64) * target_raster
+            return data.values, timestamps
+        
+        # For MDF files, try to get data at target raster first
+        try:
+            signal = self.vehicle_data.get(channel_name, raster=target_raster)
+            if signal is not None and len(signal.samples) > 0:
+                self.log_status(f"Direct raster extraction successful for {channel_name}: {len(signal.samples)} samples")
+                return signal.samples, signal.timestamps
+        except Exception as e:
+            # If raster-based extraction fails, fall back to interpolation
+            self.log_status(f"Direct raster extraction failed for {channel_name}, using interpolation: {str(e)}")
+            pass
+        
+        # Fallback: get original signal and interpolate
+        try:
+            original_signal = self.vehicle_data.get(channel_name)
+            if original_signal is None or len(original_signal.samples) == 0:
+                raise Exception(f"Channel {channel_name} not found or empty")
+            
+            # Create target timestamps
+            start_time = original_signal.timestamps[0]
+            end_time = original_signal.timestamps[-1]
+            target_timestamps = np.arange(start_time, end_time + target_raster, target_raster)
+            
+            # Interpolate to target timestamps
+            interpolator = interp1d(
+                original_signal.timestamps, 
+                original_signal.samples,
+                kind='linear',
+                bounds_error=False,
+                fill_value='extrapolate'
+            )
+            interpolated_samples = interpolator(target_timestamps)
+            
+            self.log_status(f"Interpolated {channel_name}: {len(original_signal.samples)} -> {len(interpolated_samples)} samples")
+            return interpolated_samples, target_timestamps
+            
+        except Exception as e:
+            raise Exception(f"Failed to get data for {channel_name}: {str(e)}")
+
     def ask_for_raster(self):
-        """Ask user for raster value for resampling MDF files"""
+        """Ask user for raster value for resampling MDF files with detailed channel analysis"""
         raster_window = tk.Toplevel(self.root)
-        raster_window.title('Set Time Raster')
-        raster_window.geometry('480x320')
+        raster_window.title('Set Time Raster - Advanced Analysis')
+        raster_window.geometry('800x600')
         raster_window.grab_set()
         
-        tk.Label(raster_window, text='Time Raster Configuration', 
+        tk.Label(raster_window, text='Time Raster Configuration with Channel Analysis', 
                 font=('Arial', 14, 'bold')).pack(pady=10)
         
-        tk.Label(raster_window, text='The vehicle channels may have different sampling rates.\n'
-                                    'Specify a time raster (in seconds) to resample all signals\n'
-                                    'to the same time base for interpolation.\n\n'
-                                    'Choose a raster appropriate for your measurement data:', 
-                font=('Arial', 10)).pack(pady=10)
+        # Analyze channels first
+        self.log_status("Analyzing channel sampling rates...")
+        channel_analysis = self.analyze_channel_sampling_rates()
+        
+        # Calculate overall minimum raster
+        overall_min_raster = 0.001  # Default fallback
+        limiting_channel = "Unknown"
+        
+        if channel_analysis:
+            min_rasters = []
+            for ch_name, analysis in channel_analysis.items():
+                if 'suggested_min_raster' in analysis:
+                    min_rasters.append(analysis['suggested_min_raster'])
+                    if analysis['suggested_min_raster'] == max(min_rasters):
+                        limiting_channel = ch_name
+            if min_rasters:
+                overall_min_raster = max(min_rasters)
+        
+        # Info frame
+        info_frame = tk.LabelFrame(raster_window, text="Raster Information", font=('Arial', 12, 'bold'))
+        info_frame.pack(fill="x", padx=20, pady=10)
+        
+        info_text = ('The vehicle channels may have different sampling rates.\n'
+                    'Specify a time raster (in seconds) to resample all signals to the same time base.\n'
+                    'Lower rasters provide finer resolution but require interpolation if original data is coarser.')
+        tk.Label(info_frame, text=info_text, font=('Arial', 10), justify="left").pack(anchor="w", padx=10, pady=5)
+        
+        # Overall minimum raster display
+        min_raster_frame = tk.LabelFrame(raster_window, text="Recommended Minimum Raster", 
+                                        font=('Arial', 12, 'bold'), fg="red")
+        min_raster_frame.pack(fill="x", padx=20, pady=5)
+        
+        tk.Label(min_raster_frame, 
+                text=f"Overall Minimum Raster: {overall_min_raster:.6f} seconds ({overall_min_raster*1000:.2f} ms)",
+                font=('Arial', 11, 'bold'), fg="red").pack(anchor="w", padx=10, pady=2)
+        tk.Label(min_raster_frame, 
+                text=f"Limiting Channel: {limiting_channel}",
+                font=('Arial', 10), fg="darkred").pack(anchor="w", padx=10, pady=2)
+        tk.Label(min_raster_frame, 
+                text="Values below this may require interpolation and could affect accuracy.",
+                font=('Arial', 9), fg="darkred").pack(anchor="w", padx=10, pady=2)
+        
+        # Channel details frame (optional window)
+        details_btn_frame = tk.Frame(raster_window)
+        details_btn_frame.pack(fill="x", padx=20, pady=5)
+        
+        def show_channel_details():
+            detail_window = tk.Toplevel(raster_window)
+            detail_window.title('Channel Analysis Details')
+            detail_window.geometry('700x400')
+            
+            # Create treeview for channel details
+            columns = ("Channel", "Min Interval", "Avg Interval", "Suggested Min Raster", "Samples", "Status")
+            tree = ttk.Treeview(detail_window, columns=columns, show="headings", height=15)
+            
+            for col in columns:
+                tree.heading(col, text=col)
+                tree.column(col, width=110)
+            
+            # Populate tree with channel analysis
+            for ch_name, analysis in channel_analysis.items():
+                if 'error' in analysis:
+                    tree.insert("", "end", values=(
+                        ch_name, "Error", "Error", "Error", "Error", analysis['error']
+                    ))
+                elif 'note' in analysis:
+                    tree.insert("", "end", values=(
+                        ch_name, "N/A", "N/A", "N/A", analysis.get('sample_count', 'N/A'), analysis['note']
+                    ))
+                else:
+                    tree.insert("", "end", values=(
+                        ch_name,
+                        f"{analysis['min_interval']:.6f}s",
+                        f"{analysis['avg_interval']:.6f}s", 
+                        f"{analysis['suggested_min_raster']:.6f}s",
+                        analysis['sample_count'],
+                        "OK"
+                    ))
+            
+            tree.pack(fill="both", expand=True, padx=10, pady=10)
+            
+        tk.Button(details_btn_frame, text="Show Channel Analysis Details", 
+                 command=show_channel_details, bg="lightblue").pack(side="right")
         
         # Input frame
-        input_frame = tk.Frame(raster_window)
-        input_frame.pack(pady=10)
+        input_frame = tk.LabelFrame(raster_window, text="Set Raster Value", font=('Arial', 12, 'bold'))
+        input_frame.pack(fill="x", padx=20, pady=10)
         
-        tk.Label(input_frame, text='Raster (seconds):').grid(row=0, column=0, padx=5)
-        raster_var = tk.DoubleVar(value=0.01)
-        raster_entry = tk.Entry(input_frame, textvariable=raster_var, width=15)
+        raster_input_frame = tk.Frame(input_frame)
+        raster_input_frame.pack(pady=10)
+        
+        tk.Label(raster_input_frame, text='Raster (seconds):', font=('Arial', 10, 'bold')).grid(row=0, column=0, padx=5)
+        raster_var = tk.DoubleVar(value=overall_min_raster)
+        raster_entry = tk.Entry(raster_input_frame, textvariable=raster_var, width=15, font=('Arial', 10))
         raster_entry.grid(row=0, column=1, padx=5)
         
-        # Suggested values
-        suggestions_frame = tk.Frame(raster_window)
-        suggestions_frame.pack(pady=10)
+        # Add button to set recommended minimum
+        tk.Button(raster_input_frame, text="Use Recommended", 
+                 command=lambda: raster_var.set(overall_min_raster), 
+                 bg="lightgreen").grid(row=0, column=2, padx=10)
         
-        tk.Label(suggestions_frame, text='Common values for automotive measurements:', 
-                font=('Arial', 9)).pack()
+        # Suggested values
+        suggestions_frame = tk.LabelFrame(raster_window, text="Common Raster Values", font=('Arial', 11, 'bold'))
+        suggestions_frame.pack(fill="x", padx=20, pady=5)
+        
+        tk.Label(suggestions_frame, text='Quick selection for automotive measurements:', 
+                font=('Arial', 9)).pack(pady=5)
         
         buttons_frame = tk.Frame(suggestions_frame)
-        buttons_frame.pack()
+        buttons_frame.pack(pady=5)
         
         def set_raster(value):
             raster_var.set(value)
+            # Show warning if below recommended minimum
+            if value < overall_min_raster:
+                warning_label.config(text=f"⚠️ Warning: Below recommended minimum ({overall_min_raster:.6f}s). Interpolation will be used.", 
+                                   fg="orange")
+            else:
+                warning_label.config(text="✅ Good choice - within recommended range.", fg="green")
         
         for value, label in [(0.001, '1ms'), (0.01, '10ms'), (0.02, '20ms'), 
                             (0.05, '50ms'), (0.1, '100ms'), (0.2, '200ms')]:
-            tk.Button(buttons_frame, text=f'{label} ({value})', 
-                     command=lambda v=value: set_raster(v), width=12).pack(side='left', padx=2)
+            btn_color = "lightgreen" if value >= overall_min_raster else "lightyellow"
+            tk.Button(buttons_frame, text=f'{label}\n({value}s)', 
+                     command=lambda v=value: set_raster(v), width=8, height=2,
+                     bg=btn_color).pack(side='left', padx=2)
+        
+        # Warning label
+        warning_label = tk.Label(suggestions_frame, text="", font=('Arial', 9))
+        warning_label.pack(pady=5)
+        
+        # Initialize warning
+        set_raster(raster_var.get())
         
         result = [None]
         
@@ -792,21 +1022,25 @@ class VehicleLogChannelAppender:
                     self.log_status(f"Error loading surface table for {channel_config['name']}: {str(e)}")
                     continue
                 
-                # Extract vehicle data
+                # Extract vehicle data with interpolation support
                 try:
                     if file_ext == '.csv':
                         x_data = pd.to_numeric(self.vehicle_data[channel_config['vehicle_x_channel']], errors='coerce')
                         y_data = pd.to_numeric(self.vehicle_data[channel_config['vehicle_y_channel']], errors='coerce')
-                        timestamps = np.arange(len(x_data), dtype=np.float64)
+                        timestamps = np.arange(len(x_data), dtype=np.float64) * raster
                     else:  # MDF files
-                        x_signal = self.vehicle_data.get(channel_config['vehicle_x_channel'], raster=raster)
-                        y_signal = self.vehicle_data.get(channel_config['vehicle_y_channel'], raster=raster)
-                        x_data = x_signal.samples
-                        y_data = y_signal.samples
-                        timestamps = x_signal.timestamps
+                        # Use new interpolation-capable method
+                        x_data, x_timestamps = self.get_interpolated_signal_data(channel_config['vehicle_x_channel'], raster)
+                        y_data, y_timestamps = self.get_interpolated_signal_data(channel_config['vehicle_y_channel'], raster)
+                        
+                        # Align timestamps - use the shorter range
+                        min_length = min(len(x_data), len(y_data))
+                        x_data = x_data[:min_length]
+                        y_data = y_data[:min_length]
+                        timestamps = x_timestamps[:min_length]
                         
                         if len(x_data) != len(y_data):
-                            raise Exception(f"Channel length mismatch: {len(x_data)} vs {len(y_data)}")
+                            raise Exception(f"Channel length mismatch after interpolation: {len(x_data)} vs {len(y_data)}")
                         
                     self.log_status(f"Vehicle data extracted for {channel_config['name']}: {len(x_data)} samples")
                     

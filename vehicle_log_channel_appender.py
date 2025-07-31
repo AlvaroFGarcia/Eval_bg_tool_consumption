@@ -15,6 +15,11 @@ Recent Improvements:
 - Added automatic interpolation when target raster is finer than source data
 - Enhanced raster dialog shows recommended minimum and per-channel analysis
 - Better error handling and user feedback during processing
+- Fixed scrollbar alignment in Custom Channels table
+- Added search functionality for table variables
+- Added column filters for better data management
+- Preserved form settings after adding channels for faster workflow
+- Enhanced settings management with user-defined save/load options
 """
 
 import numpy as np
@@ -76,7 +81,7 @@ class VehicleLogChannelAppender:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("Vehicle Log Channel Appender - Multi-Channel Tool")
-        self.root.geometry("1000x700")
+        self.root.geometry("1200x800")
         
         # Data storage
         self.vehicle_file_path = None
@@ -84,6 +89,14 @@ class VehicleLogChannelAppender:
         self.available_channels = []
         self.custom_channels = []  # List of custom channel configurations
         self.reference_timestamps = None
+        
+        # Search and filter variables
+        self.search_var = tk.StringVar()
+        self.filter_vars = {}
+        self.all_custom_channels = []  # Store all channels for filtering
+        
+        # Bind close event
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
         
         self.setup_ui()
         self.load_settings()
@@ -119,12 +132,20 @@ class VehicleLogChannelAppender:
         self.log_text.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
         
-        # Settings buttons
+        # Enhanced Settings buttons
         settings_frame = tk.Frame(self.root)
         settings_frame.pack(fill="x", padx=20, pady=(0, 10))
         
-        tk.Button(settings_frame, text="Save Settings", command=self.save_settings).pack(side="left", padx=5)
-        tk.Button(settings_frame, text="Load Settings", command=self.load_settings).pack(side="left", padx=5)
+        # Auto-save label
+        tk.Label(settings_frame, text="Auto-save: ON", font=("Arial", 9), fg="green").pack(side="left", padx=5)
+        
+        # Manual settings buttons
+        tk.Button(settings_frame, text="Save Settings As...", command=self.save_settings_as, 
+                 bg="lightgreen").pack(side="left", padx=5)
+        tk.Button(settings_frame, text="Load Settings From...", command=self.load_settings_from, 
+                 bg="lightblue").pack(side="left", padx=5)
+        tk.Button(settings_frame, text="Reset to Defaults", command=self.reset_to_defaults, 
+                 bg="lightyellow").pack(side="left", padx=5)
         
         self.log_status("Application started. Please select a vehicle file and configure custom channels.")
 
@@ -186,7 +207,7 @@ class VehicleLogChannelAppender:
         self.process_btn.pack()
 
     def setup_custom_channels_tab(self):
-        """Setup the custom channels tab with proper CSV surface table configuration"""
+        """Setup the custom channels tab with enhanced search and filter functionality"""
         self.custom_channels_frame = ttk.Frame(self.notebook)
         self.notebook.add(self.custom_channels_frame, text="Custom Channels")
         
@@ -274,34 +295,74 @@ class VehicleLogChannelAppender:
         self.new_custom_comment = tk.Entry(comment_frame, width=25)
         self.new_custom_comment.pack(side="left", padx=5)
         
-        # Add button
+        # Add button and preserve settings checkbox
         add_btn_frame = tk.Frame(add_frame)
         add_btn_frame.pack(fill="x", padx=10, pady=10)
-        tk.Button(add_btn_frame, text="Add Custom Channel", command=self.add_custom_channel,
-                 bg="lightgreen", font=("Arial", 10, "bold")).pack()
         
-        # Custom channels list
+        self.preserve_settings = tk.BooleanVar(value=True)
+        tk.Checkbutton(add_btn_frame, text="Keep settings after adding channel", 
+                      variable=self.preserve_settings, font=("Arial", 9)).pack(side="left")
+        
+        tk.Button(add_btn_frame, text="Add Custom Channel", command=self.add_custom_channel,
+                 bg="lightgreen", font=("Arial", 10, "bold")).pack(side="right")
+        
+        # Custom channels list with search and filters
         list_frame = tk.LabelFrame(self.custom_channels_frame, text="Configured Custom Channels", 
                                   font=("Arial", 12, "bold"))
         list_frame.pack(fill="both", expand=True, padx=20, pady=10)
         
+        # Search and filter section
+        search_filter_frame = tk.Frame(list_frame)
+        search_filter_frame.pack(fill="x", padx=5, pady=5)
+        
+        # Search functionality
+        search_frame = tk.Frame(search_filter_frame)
+        search_frame.pack(side="left", fill="x", expand=True)
+        
+        tk.Label(search_frame, text="Search:", font=("Arial", 10, "bold")).pack(side="left", padx=5)
+        search_entry = tk.Entry(search_frame, textvariable=self.search_var, width=30)
+        search_entry.pack(side="left", padx=5)
+        search_entry.bind('<KeyRelease>', self.on_search_change)
+        
+        tk.Button(search_frame, text="Clear", command=self.clear_search, 
+                 bg="lightgray").pack(side="left", padx=5)
+        
+        # Filter controls
+        filter_frame = tk.Frame(search_filter_frame)
+        filter_frame.pack(side="right")
+        
+        tk.Label(filter_frame, text="Filters:", font=("Arial", 10, "bold")).pack(side="left", padx=5)
+        tk.Button(filter_frame, text="Setup Filters", command=self.setup_filters, 
+                 bg="lightblue").pack(side="left", padx=2)
+        tk.Button(filter_frame, text="Clear Filters", command=self.clear_filters, 
+                 bg="lightgray").pack(side="left", padx=2)
+        
+        # Create main container for treeview and scrollbar with proper alignment
+        tree_container = tk.Frame(list_frame)
+        tree_container.pack(fill="both", expand=True, padx=5, pady=5)
+        
+        # Configure grid for proper scrollbar alignment
+        tree_container.grid_rowconfigure(0, weight=1)
+        tree_container.grid_columnconfigure(0, weight=1)
+        
         # Create treeview for custom channels
         columns = ("Name", "CSV File", "X Col", "Y Col", "Z Col", "Veh X", "Veh Y", "Units")
-        self.custom_channels_tree = ttk.Treeview(list_frame, columns=columns, show="headings", height=8)
+        self.custom_channels_tree = ttk.Treeview(tree_container, columns=columns, show="headings", height=8)
         
         for col in columns:
             self.custom_channels_tree.heading(col, text=col)
             self.custom_channels_tree.column(col, width=120)
         
-        # Scrollbar for treeview
-        tree_frame = tk.Frame(list_frame)
-        tree_frame.pack(fill="both", expand=True, padx=5, pady=5)
+        # Fixed scrollbar positioning - properly aligned with the table
+        v_scrollbar = ttk.Scrollbar(tree_container, orient="vertical", command=self.custom_channels_tree.yview)
+        h_scrollbar = ttk.Scrollbar(tree_container, orient="horizontal", command=self.custom_channels_tree.xview)
         
-        scrollbar = ttk.Scrollbar(tree_frame, orient="vertical", command=self.custom_channels_tree.yview)
-        self.custom_channels_tree.configure(yscrollcommand=scrollbar.set)
+        self.custom_channels_tree.configure(yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
         
-        self.custom_channels_tree.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
+        # Grid layout for proper alignment
+        self.custom_channels_tree.grid(row=0, column=0, sticky="nsew")
+        v_scrollbar.grid(row=0, column=1, sticky="ns")
+        h_scrollbar.grid(row=1, column=0, sticky="ew")
         
         # Management buttons
         btn_frame = tk.Frame(list_frame)
@@ -310,6 +371,111 @@ class VehicleLogChannelAppender:
         tk.Button(btn_frame, text="Edit Selected", command=self.edit_custom_channel).pack(side="left", padx=5)
         tk.Button(btn_frame, text="Delete Selected", command=self.delete_custom_channel).pack(side="left", padx=5)
         tk.Button(btn_frame, text="Clear All", command=self.clear_custom_channels).pack(side="left", padx=5)
+        
+        # Initialize filter variables
+        for col in columns:
+            self.filter_vars[col] = tk.StringVar()
+
+    def on_search_change(self, event=None):
+        """Handle search text changes"""
+        self.apply_search_and_filters()
+    
+    def clear_search(self):
+        """Clear search field"""
+        self.search_var.set("")
+        self.apply_search_and_filters()
+    
+    def setup_filters(self):
+        """Open filter setup dialog"""
+        filter_window = tk.Toplevel(self.root)
+        filter_window.title("Column Filters")
+        filter_window.geometry("400x500")
+        filter_window.grab_set()
+        
+        tk.Label(filter_window, text="Set filters for each column:", 
+                font=("Arial", 12, "bold")).pack(pady=10)
+        
+        # Create filter controls for each column
+        filter_frame = tk.Frame(filter_window)
+        filter_frame.pack(fill="both", expand=True, padx=20, pady=10)
+        
+        columns = ("Name", "CSV File", "X Col", "Y Col", "Z Col", "Veh X", "Veh Y", "Units")
+        
+        for i, col in enumerate(columns):
+            col_frame = tk.Frame(filter_frame)
+            col_frame.pack(fill="x", pady=5)
+            
+            tk.Label(col_frame, text=f"{col}:", width=12, anchor="w").pack(side="left")
+            entry = tk.Entry(col_frame, textvariable=self.filter_vars[col], width=30)
+            entry.pack(side="left", padx=5)
+            entry.bind('<KeyRelease>', lambda e: self.apply_search_and_filters())
+        
+        # Buttons
+        btn_frame = tk.Frame(filter_window)
+        btn_frame.pack(pady=20)
+        
+        tk.Button(btn_frame, text="Apply Filters", 
+                 command=lambda: [self.apply_search_and_filters(), filter_window.destroy()], 
+                 bg="lightgreen").pack(side="left", padx=10)
+        tk.Button(btn_frame, text="Clear All", 
+                 command=self.clear_filters, bg="lightgray").pack(side="left", padx=10)
+        tk.Button(btn_frame, text="Close", 
+                 command=filter_window.destroy).pack(side="left", padx=10)
+    
+    def clear_filters(self):
+        """Clear all column filters"""
+        for var in self.filter_vars.values():
+            var.set("")
+        self.apply_search_and_filters()
+    
+    def apply_search_and_filters(self):
+        """Apply search and filter criteria to the table"""
+        # Clear existing items
+        for item in self.custom_channels_tree.get_children():
+            self.custom_channels_tree.delete(item)
+        
+        search_term = self.search_var.get().lower()
+        
+        # Filter channels based on search and filter criteria
+        for channel in self.custom_channels:
+            # Check search term (searches across all fields)
+            channel_text = ' '.join([
+                channel.get('name', ''),
+                os.path.basename(channel.get('csv_file', '')),
+                channel.get('x_column', ''),
+                channel.get('y_column', ''),
+                channel.get('z_column', ''),
+                channel.get('vehicle_x_channel', ''),
+                channel.get('vehicle_y_channel', ''),
+                channel.get('units', '')
+            ]).lower()
+            
+            if search_term and search_term not in channel_text:
+                continue
+            
+            # Check column filters
+            channel_values = [
+                channel.get('name', ''),
+                os.path.basename(channel.get('csv_file', '')),
+                channel.get('x_column', ''),
+                channel.get('y_column', ''),
+                channel.get('z_column', ''),
+                channel.get('vehicle_x_channel', ''),
+                channel.get('vehicle_y_channel', ''),
+                channel.get('units', '')
+            ]
+            
+            columns = ("Name", "CSV File", "X Col", "Y Col", "Z Col", "Veh X", "Veh Y", "Units")
+            filter_passed = True
+            
+            for i, col in enumerate(columns):
+                filter_text = self.filter_vars[col].get().lower()
+                if filter_text and filter_text not in channel_values[i].lower():
+                    filter_passed = False
+                    break
+            
+            if filter_passed:
+                self.custom_channels_tree.insert("", "end", values=channel_values)
 
     def browse_custom_csv(self):
         """Browse for CSV surface table file and load its columns"""
@@ -382,11 +548,15 @@ class VehicleLogChannelAppender:
         # Update treeview
         self.refresh_custom_channels_tree()
         
-        # Auto-save settings to preserve the last used configuration (before clearing)
+        # Auto-save settings to preserve the configuration
         self.save_settings()
         
-        # Clear input fields
-        self.clear_custom_channel_inputs()
+        # Clear input fields only if preserve_settings is False
+        if not self.preserve_settings.get():
+            self.clear_custom_channel_inputs()
+        else:
+            # Just clear the name field for the next channel
+            self.new_custom_name.delete(0, tk.END)
         
         self.log_status(f"Added custom channel: {name}")
 
@@ -404,22 +574,12 @@ class VehicleLogChannelAppender:
 
     def refresh_custom_channels_tree(self):
         """Refresh the custom channels tree view"""
-        # Clear existing items
-        for item in self.custom_channels_tree.get_children():
-            self.custom_channels_tree.delete(item)
+        # Store current search and filter state
+        current_search = self.search_var.get()
+        current_filters = {col: var.get() for col, var in self.filter_vars.items()}
         
-        # Add current custom channels
-        for channel in self.custom_channels:
-            self.custom_channels_tree.insert("", "end", values=(
-                channel['name'],
-                os.path.basename(channel['csv_file']),
-                channel['x_column'],
-                channel['y_column'],
-                channel['z_column'],
-                channel['vehicle_x_channel'],
-                channel['vehicle_y_channel'],
-                channel['units']
-            ))
+        # Apply search and filters
+        self.apply_search_and_filters()
 
     def edit_custom_channel(self):
         """Edit the selected custom channel"""
@@ -429,8 +589,22 @@ class VehicleLogChannelAppender:
             return
             
         item = selection[0]
-        index = self.custom_channels_tree.index(item)
-        channel = self.custom_channels[index]
+        values = self.custom_channels_tree.item(item)['values']
+        
+        # Find the actual channel in the list by name
+        channel_name = values[0]
+        channel = None
+        channel_index = None
+        
+        for i, ch in enumerate(self.custom_channels):
+            if ch['name'] == channel_name:
+                channel = ch
+                channel_index = i
+                break
+        
+        if not channel:
+            messagebox.showerror("Error", "Channel not found!")
+            return
         
         # Fill the input fields with current values
         self.new_custom_name.delete(0, tk.END)
@@ -464,7 +638,7 @@ class VehicleLogChannelAppender:
         self.new_custom_comment.insert(0, channel['comment'])
         
         # Remove the channel (will be re-added when user clicks Add)
-        del self.custom_channels[index]
+        del self.custom_channels[channel_index]
         self.refresh_custom_channels_tree()
 
     def delete_custom_channel(self):
@@ -476,8 +650,15 @@ class VehicleLogChannelAppender:
             
         if messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this custom channel?"):
             item = selection[0]
-            index = self.custom_channels_tree.index(item)
-            del self.custom_channels[index]
+            values = self.custom_channels_tree.item(item)['values']
+            channel_name = values[0]
+            
+            # Find and remove the channel
+            for i, channel in enumerate(self.custom_channels):
+                if channel['name'] == channel_name:
+                    del self.custom_channels[i]
+                    break
+            
             self.refresh_custom_channels_tree()
             self.log_status("Custom channel deleted")
 
@@ -1155,67 +1336,21 @@ class VehicleLogChannelAppender:
             raise
 
     def save_settings(self):
-        """Save current settings to file"""
+        """Auto-save current settings to default file"""
         try:
-            # Capture current form values for last channel settings
-            last_channel_settings = {
-                'name': self.new_custom_name.get(),
-                'csv_file': self.new_custom_csv.get(),
-                'x_column': self.new_custom_x_col.get(),
-                'y_column': self.new_custom_y_col.get(),
-                'z_column': self.new_custom_z_col.get(),
-                'vehicle_x_channel': self.new_custom_veh_x.get(),
-                'vehicle_y_channel': self.new_custom_veh_y.get(),
-                'units': self.new_custom_units.get(),
-                'comment': self.new_custom_comment.get()
-            }
-            
-            settings = {
-                'vehicle_file': self.vehicle_file_path,
-                'custom_channels': self.custom_channels,
-                'output_format': self.output_format.get(),
-                'last_channel_settings': last_channel_settings,
-                'last_updated': datetime.now().isoformat()
-            }
-            
+            settings = self.get_all_settings()
             with open('channel_appender_settings.json', 'w') as f:
                 json.dump(settings, f, indent=2)
-                
-            self.log_status("Settings saved successfully")
-            
         except Exception as e:
-            self.log_status(f"Error saving settings: {str(e)}")
+            self.log_status(f"Error auto-saving settings: {str(e)}")
 
     def load_settings(self):
-        """Load settings from file"""
+        """Load settings from default file"""
         try:
             if os.path.exists('channel_appender_settings.json'):
                 with open('channel_appender_settings.json', 'r') as f:
                     settings = json.load(f)
-                
-                # Load vehicle file if it exists
-                if settings.get('vehicle_file') and os.path.exists(settings['vehicle_file']):
-                    self.vehicle_file_path = settings['vehicle_file']
-                    self.vehicle_status.config(text=f"Loaded: {os.path.basename(self.vehicle_file_path)}", fg="green")
-                    try:
-                        self.load_vehicle_file()
-                    except Exception as e:
-                        self.log_status(f"Error loading saved vehicle file: {str(e)}")
-                
-                # Load custom channels
-                self.custom_channels = settings.get('custom_channels', [])
-                self.refresh_custom_channels_tree()
-                
-                # Load output format
-                if settings.get('output_format'):
-                    self.output_format.set(settings['output_format'])
-                
-                # Load last channel settings
-                if settings.get('last_channel_settings'):
-                    self.restore_last_channel_settings(settings['last_channel_settings'])
-                
-                self.log_status("Settings loaded successfully")
-                
+                self.restore_settings(settings)
         except Exception as e:
             self.log_status(f"Error loading settings: {str(e)}")
 
@@ -1279,6 +1414,96 @@ class VehicleLogChannelAppender:
         self.log_text.insert(tk.END, f"[{timestamp}] {message}\n")
         self.log_text.see(tk.END)
         self.root.update()
+
+    def on_closing(self):
+        """Handle window closing event"""
+        if messagebox.askyesno("Quit", "Do you want to save settings before exiting?"):
+            self.save_settings()
+        self.root.destroy()
+
+    def save_settings_as(self):
+        """Save settings to a new file"""
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".json",
+            filetypes=[("JSON Files", "*.json")],
+            title="Save Settings As"
+        )
+        if file_path:
+            try:
+                with open(file_path, 'w') as f:
+                    json.dump(self.get_all_settings(), f, indent=2)
+                self.log_status(f"Settings saved to {file_path}")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to save settings: {str(e)}")
+                self.log_status(f"Error saving settings: {str(e)}")
+
+    def load_settings_from(self):
+        """Load settings from a file"""
+        file_path = filedialog.askopenfilename(
+            filetypes=[("JSON Files", "*.json")],
+            title="Load Settings From"
+        )
+        if file_path:
+            try:
+                with open(file_path, 'r') as f:
+                    settings = json.load(f)
+                self.restore_settings(settings)
+                self.log_status(f"Settings loaded from {file_path}")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to load settings: {str(e)}")
+                self.log_status(f"Error loading settings: {str(e)}")
+
+    def reset_to_defaults(self):
+        """Reset settings to default values"""
+        if messagebox.askyesno("Reset Settings", "Are you sure you want to reset settings to default?"):
+            self.custom_channels = []
+            self.refresh_custom_channels_tree()
+            self.log_status("Settings reset to default.")
+
+    def get_all_settings(self):
+        """Get all current settings in a single dictionary"""
+        return {
+            'vehicle_file': self.vehicle_file_path,
+            'custom_channels': self.custom_channels,
+            'output_format': self.output_format.get(),
+            'last_channel_settings': {
+                'name': self.new_custom_name.get(),
+                'csv_file': self.new_custom_csv.get(),
+                'x_column': self.new_custom_x_col.get(),
+                'y_column': self.new_custom_y_col.get(),
+                'z_column': self.new_custom_z_col.get(),
+                'vehicle_x_channel': self.new_custom_veh_x.get(),
+                'vehicle_y_channel': self.new_custom_veh_y.get(),
+                'units': self.new_custom_units.get(),
+                'comment': self.new_custom_comment.get()
+            },
+            'last_updated': datetime.now().isoformat()
+        }
+
+    def restore_settings(self, settings):
+        """Restore settings from a dictionary"""
+        # Load vehicle file if it exists
+        if settings.get('vehicle_file') and os.path.exists(settings['vehicle_file']):
+            self.vehicle_file_path = settings['vehicle_file']
+            self.vehicle_status.config(text=f"Loaded: {os.path.basename(self.vehicle_file_path)}", fg="green")
+            try:
+                self.load_vehicle_file()
+            except Exception as e:
+                self.log_status(f"Error loading saved vehicle file: {str(e)}")
+
+        # Load custom channels
+        self.custom_channels = settings.get('custom_channels', [])
+        self.refresh_custom_channels_tree()
+
+        # Load output format
+        if settings.get('output_format'):
+            self.output_format.set(settings['output_format'])
+
+        # Load last channel settings
+        if settings.get('last_channel_settings'):
+            self.restore_last_channel_settings(settings['last_channel_settings'])
+            
+        self.log_status("Settings loaded successfully")
 
     def run(self):
         """Start the application"""

@@ -95,6 +95,9 @@ class VehicleLogChannelAppender:
         self.filter_vars = {}
         self.all_custom_channels = []  # Store all channels for filtering
         
+        # Tooltip window reference
+        self.tooltip_window = None
+        
         # Bind close event
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
         
@@ -136,16 +139,60 @@ class VehicleLogChannelAppender:
         settings_frame = tk.Frame(self.root)
         settings_frame.pack(fill="x", padx=20, pady=(0, 10))
         
-        # Auto-save label
-        tk.Label(settings_frame, text="Auto-save: ON", font=("Arial", 9), fg="green").pack(side="left", padx=5)
+        # Auto-save status
+        status_frame = tk.Frame(settings_frame)
+        status_frame.pack(side="left", fill="x", expand=True)
         
-        # Manual settings buttons
-        tk.Button(settings_frame, text="Save Settings As...", command=self.save_settings_as, 
-                 bg="lightgreen").pack(side="left", padx=5)
-        tk.Button(settings_frame, text="Load Settings From...", command=self.load_settings_from, 
-                 bg="lightblue").pack(side="left", padx=5)
-        tk.Button(settings_frame, text="Reset to Defaults", command=self.reset_to_defaults, 
-                 bg="lightyellow").pack(side="left", padx=5)
+        tk.Label(status_frame, text="Auto-save: ON", font=("Arial", 9), fg="green").pack(side="left", padx=5)
+        tk.Label(status_frame, text="●", font=("Arial", 12), fg="lightgreen").pack(side="left")
+        
+        # Main settings buttons
+        main_settings_frame = tk.Frame(settings_frame)
+        main_settings_frame.pack(side="right")
+        
+        tk.Button(main_settings_frame, text="💾 Save Settings As...", command=self.save_settings_as, 
+                 bg="lightgreen", font=("Arial", 9, "bold")).pack(side="left", padx=2)
+        tk.Button(main_settings_frame, text="📁 Load Settings From...", command=self.load_settings_from, 
+                 bg="lightblue", font=("Arial", 9, "bold")).pack(side="left", padx=2)
+        
+        # Quick save/load section
+        quick_frame = tk.Frame(settings_frame)
+        quick_frame.pack(side="right", padx=(10, 0))
+        
+        tk.Label(quick_frame, text="Quick:", font=("Arial", 8)).pack(side="left")
+        
+        # Store references to quick save/load buttons for updating indicators
+        self.quick_save_buttons = {}
+        self.quick_load_buttons = {}
+        
+        # Quick save slots (1-3)
+        for i in range(1, 4):
+            btn_frame = tk.Frame(quick_frame)
+            btn_frame.pack(side="left", padx=1)
+            
+            # Check if slot has data
+            slot_has_data = os.path.exists(f"quick_save_slot_{i}.json")
+            save_color = "lightgreen" if not slot_has_data else "green"
+            load_color = "lightblue" if slot_has_data else "lightgray"
+            
+            # Save button
+            save_btn = tk.Button(btn_frame, text=f"S{i}", command=lambda slot=i: self.quick_save_settings(slot), 
+                     bg=save_color, font=("Arial", 7), width=3, height=1)
+            save_btn.pack(side="top")
+            self.quick_save_buttons[i] = save_btn
+            
+            # Load button  
+            load_btn = tk.Button(btn_frame, text=f"L{i}", command=lambda slot=i: self.quick_load_settings(slot), 
+                     bg=load_color, font=("Arial", 7), width=3, height=1)
+            load_btn.pack(side="top")
+            self.quick_load_buttons[i] = load_btn
+            
+            # Add tooltip effect on hover
+            self.add_slot_tooltip(save_btn, load_btn, i)
+        
+        # Reset button
+        tk.Button(main_settings_frame, text="🔄 Reset", command=self.reset_to_defaults, 
+                 bg="lightyellow", font=("Arial", 9)).pack(side="left", padx=2)
         
         self.log_status("Application started. Please select a vehicle file and configure custom channels.")
 
@@ -1416,42 +1463,229 @@ class VehicleLogChannelAppender:
         self.root.update()
 
     def on_closing(self):
-        """Handle window closing event"""
-        if messagebox.askyesno("Quit", "Do you want to save settings before exiting?"):
-            self.save_settings()
-        self.root.destroy()
+        """Handle window closing event with comprehensive save options"""
+        # Check if there are any custom channels that might be lost
+        num_channels = len(self.custom_channels)
+        
+        if num_channels > 0:
+            # Create custom dialog for exit options
+            exit_dialog = tk.Toplevel(self.root)
+            exit_dialog.title("Save Settings Before Exit?")
+            exit_dialog.geometry("400x250")
+            exit_dialog.grab_set()
+            exit_dialog.transient(self.root)
+            
+            # Center the dialog
+            exit_dialog.geometry("+%d+%d" % (self.root.winfo_rootx() + 50, self.root.winfo_rooty() + 50))
+            
+            # Main message
+            tk.Label(exit_dialog, text="Save Settings Before Exit?", 
+                    font=("Arial", 14, "bold")).pack(pady=10)
+            
+            # Info about current state
+            info_text = f"You have {num_channels} custom channel(s) configured.\nWhat would you like to do before exiting?"
+            tk.Label(exit_dialog, text=info_text, font=("Arial", 10), 
+                    justify="center").pack(pady=10)
+            
+            # Options frame
+            options_frame = tk.Frame(exit_dialog)
+            options_frame.pack(fill="both", expand=True, padx=20, pady=10)
+            
+            result = [None]  # Use list to store result from nested functions
+            
+            def auto_save_exit():
+                result[0] = "auto_save"
+                exit_dialog.destroy()
+            
+            def save_as_exit():
+                result[0] = "save_as"
+                exit_dialog.destroy()
+            
+            def quick_save_exit():
+                result[0] = "quick_save"
+                exit_dialog.destroy()
+            
+            def no_save_exit():
+                result[0] = "no_save"
+                exit_dialog.destroy()
+            
+            def cancel_exit():
+                result[0] = "cancel"
+                exit_dialog.destroy()
+            
+            # Button layout
+            tk.Button(options_frame, text="💾 Auto-Save & Exit", command=auto_save_exit, 
+                     bg="lightgreen", font=("Arial", 10, "bold")).pack(fill="x", pady=2)
+            tk.Label(options_frame, text="(Save to default file)", font=("Arial", 8), 
+                    fg="gray").pack()
+            
+            tk.Button(options_frame, text="📁 Save As... & Exit", command=save_as_exit, 
+                     bg="lightblue", font=("Arial", 10)).pack(fill="x", pady=2)
+            tk.Label(options_frame, text="(Choose custom filename)", font=("Arial", 8), 
+                    fg="gray").pack()
+            
+            tk.Button(options_frame, text="⚡ Quick Save & Exit", command=quick_save_exit, 
+                     bg="lightyellow", font=("Arial", 10)).pack(fill="x", pady=2)
+            tk.Label(options_frame, text="(Save to slot 1)", font=("Arial", 8), 
+                    fg="gray").pack()
+            
+            # Separator
+            tk.Frame(options_frame, height=1, bg="gray").pack(fill="x", pady=5)
+            
+            tk.Button(options_frame, text="🚫 Exit Without Saving", command=no_save_exit, 
+                     bg="lightcoral", font=("Arial", 10)).pack(fill="x", pady=2)
+            
+            tk.Button(options_frame, text="❌ Cancel", command=cancel_exit, 
+                     bg="lightgray", font=("Arial", 10)).pack(fill="x", pady=2)
+            
+            # Wait for user choice
+            exit_dialog.wait_window()
+            
+            # Process the result
+            if result[0] == "auto_save":
+                self.save_settings()
+                self.log_status("✅ Auto-saved settings before exit")
+                self.root.destroy()
+            elif result[0] == "save_as":
+                self.save_settings_as()
+                self.root.destroy()
+            elif result[0] == "quick_save":
+                self.quick_save_settings(1)
+                self.root.destroy()
+            elif result[0] == "no_save":
+                self.root.destroy()
+            # If "cancel" or None, do nothing (stay open)
+            
+        else:
+            # No custom channels, just simple confirmation
+            if messagebox.askyesno("Exit", "Are you sure you want to exit?"):
+                self.root.destroy()
 
     def save_settings_as(self):
-        """Save settings to a new file"""
+        """Save settings to a new file with improved default naming"""
+        # Generate default filename with timestamp and configuration summary
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        num_channels = len(self.custom_channels)
+        vehicle_name = "NoVehicle"
+        if self.vehicle_file_path:
+            vehicle_name = Path(self.vehicle_file_path).stem
+        
+        default_name = f"settings_{vehicle_name}_{num_channels}channels_{timestamp}.json"
+        
         file_path = filedialog.asksaveasfilename(
             defaultextension=".json",
-            filetypes=[("JSON Files", "*.json")],
-            title="Save Settings As"
+            filetypes=[("JSON Files", "*.json"), ("All Files", "*.*")],
+            title="Save Settings As",
+            initialvalue=default_name
         )
         if file_path:
             try:
+                settings = self.get_all_settings()
+                settings['description'] = f"Settings saved on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} with {num_channels} custom channels"
+                
                 with open(file_path, 'w') as f:
-                    json.dump(self.get_all_settings(), f, indent=2)
-                self.log_status(f"Settings saved to {file_path}")
+                    json.dump(settings, f, indent=2)
+                self.log_status(f"✅ Settings saved to {os.path.basename(file_path)}")
+                messagebox.showinfo("Settings Saved", f"Settings saved successfully to:\n{os.path.basename(file_path)}")
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to save settings: {str(e)}")
-                self.log_status(f"Error saving settings: {str(e)}")
+                self.log_status(f"❌ Error saving settings: {str(e)}")
 
     def load_settings_from(self):
-        """Load settings from a file"""
+        """Load settings from a file with better user feedback"""
         file_path = filedialog.askopenfilename(
-            filetypes=[("JSON Files", "*.json")],
+            filetypes=[("JSON Files", "*.json"), ("All Files", "*.*")],
             title="Load Settings From"
         )
         if file_path:
             try:
                 with open(file_path, 'r') as f:
                     settings = json.load(f)
-                self.restore_settings(settings)
-                self.log_status(f"Settings loaded from {file_path}")
+                
+                # Show preview of what will be loaded
+                num_channels = len(settings.get('custom_channels', []))
+                vehicle_file = settings.get('vehicle_file', 'None')
+                description = settings.get('description', 'No description available')
+                
+                preview_msg = (f"Settings Preview:\n"
+                             f"• Custom Channels: {num_channels}\n"
+                             f"• Vehicle File: {os.path.basename(vehicle_file) if vehicle_file else 'None'}\n"
+                             f"• Description: {description}\n\n"
+                             f"Load these settings?")
+                
+                if messagebox.askyesno("Load Settings", preview_msg):
+                    self.restore_settings(settings)
+                    self.log_status(f"✅ Settings loaded from {os.path.basename(file_path)}")
+                    messagebox.showinfo("Settings Loaded", f"Settings loaded successfully!\n{num_channels} custom channels restored.")
+                else:
+                    self.log_status("Settings load cancelled by user")
+                    
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to load settings: {str(e)}")
-                self.log_status(f"Error loading settings: {str(e)}")
+                self.log_status(f"❌ Error loading settings: {str(e)}")
+
+    def quick_save_settings(self, slot):
+        """Quick save settings to a numbered slot"""
+        try:
+            settings = self.get_all_settings()
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            num_channels = len(self.custom_channels)
+            
+            settings['description'] = f"Quick save slot {slot} - {timestamp} ({num_channels} channels)"
+            
+            filename = f"quick_save_slot_{slot}.json"
+            with open(filename, 'w') as f:
+                json.dump(settings, f, indent=2)
+            
+            self.log_status(f"✅ Quick saved to slot {slot} ({num_channels} channels)")
+            
+            # Update button indicators
+            self.update_quick_save_indicators()
+            
+            # Brief visual feedback
+            self.root.after(100, lambda: self.show_quick_feedback(f"Saved Slot {slot}!", "lightgreen"))
+            
+        except Exception as e:
+            self.log_status(f"❌ Error quick saving to slot {slot}: {str(e)}")
+            self.show_quick_feedback(f"Save Error!", "lightcoral")
+
+    def quick_load_settings(self, slot):
+        """Quick load settings from a numbered slot"""
+        filename = f"quick_save_slot_{slot}.json"
+        
+        if not os.path.exists(filename):
+            self.log_status(f"⚠️ Quick save slot {slot} is empty")
+            self.show_quick_feedback(f"Slot {slot} Empty", "lightyellow")
+            return
+        
+        try:
+            with open(filename, 'r') as f:
+                settings = json.load(f)
+            
+            num_channels = len(settings.get('custom_channels', []))
+            
+            # Quick load without confirmation for faster workflow
+            self.restore_settings(settings)
+            self.log_status(f"✅ Quick loaded from slot {slot} ({num_channels} channels)")
+            
+            # Update button indicators in case any changes occurred
+            self.update_quick_save_indicators()
+            
+            # Brief visual feedback
+            self.show_quick_feedback(f"Loaded Slot {slot}!", "lightblue")
+            
+        except Exception as e:
+            self.log_status(f"❌ Error quick loading from slot {slot}: {str(e)}")
+            self.show_quick_feedback(f"Load Error!", "lightcoral")
+
+    def show_quick_feedback(self, message, color):
+        """Show brief visual feedback for quick actions"""
+        # Create a temporary label for feedback
+        feedback_label = tk.Label(self.root, text=message, bg=color, font=("Arial", 9, "bold"))
+        feedback_label.place(relx=0.5, rely=0.1, anchor="center")
+        
+        # Remove after 1.5 seconds
+        self.root.after(1500, feedback_label.destroy)
 
     def reset_to_defaults(self):
         """Reset settings to default values"""
@@ -1508,6 +1742,67 @@ class VehicleLogChannelAppender:
     def run(self):
         """Start the application"""
         self.root.mainloop()
+
+    def add_slot_tooltip(self, save_btn, load_btn, slot):
+        """Add tooltip functionality to quick save/load buttons"""
+        def show_save_tooltip(event):
+            tooltip_text = f"Quick Save Slot {slot}\nSave current settings"
+            self.show_tooltip(event.widget, tooltip_text)
+        
+        def show_load_tooltip(event):
+            filename = f"quick_save_slot_{slot}.json"
+            if os.path.exists(filename):
+                try:
+                    with open(filename, 'r') as f:
+                        settings = json.load(f)
+                    num_channels = len(settings.get('custom_channels', []))
+                    description = settings.get('description', '')
+                    tooltip_text = f"Quick Load Slot {slot}\n{num_channels} channels\n{description}"
+                except:
+                    tooltip_text = f"Quick Load Slot {slot}\nData available"
+            else:
+                tooltip_text = f"Quick Load Slot {slot}\nEmpty slot"
+            self.show_tooltip(event.widget, tooltip_text)
+        
+        def hide_tooltip(event):
+            if hasattr(self, 'tooltip_window') and self.tooltip_window:
+                self.tooltip_window.destroy()
+                self.tooltip_window = None
+        
+        save_btn.bind('<Enter>', show_save_tooltip)
+        save_btn.bind('<Leave>', hide_tooltip)
+        load_btn.bind('<Enter>', show_load_tooltip)
+        load_btn.bind('<Leave>', hide_tooltip)
+
+    def show_tooltip(self, widget, text):
+        """Show tooltip near the widget"""
+        if hasattr(self, 'tooltip_window') and self.tooltip_window:
+            self.tooltip_window.destroy()
+        
+        self.tooltip_window = tw = tk.Toplevel(widget)
+        tw.wm_overrideredirect(True)
+        
+        # Position tooltip near the widget
+        x = widget.winfo_rootx() + 25
+        y = widget.winfo_rooty() + 25
+        tw.geometry(f"+{x}+{y}")
+        
+        label = tk.Label(tw, text=text, font=("Arial", 8), bg="lightyellow", 
+                        relief="solid", borderwidth=1, padx=5, pady=3)
+        label.pack()
+
+    def update_quick_save_indicators(self):
+        """Update the visual indicators for quick save slots"""
+        for slot in range(1, 4):
+            slot_has_data = os.path.exists(f"quick_save_slot_{slot}.json")
+            
+            if slot in self.quick_save_buttons:
+                save_color = "green" if slot_has_data else "lightgreen"
+                self.quick_save_buttons[slot].config(bg=save_color)
+            
+            if slot in self.quick_load_buttons:
+                load_color = "lightblue" if slot_has_data else "lightgray"
+                self.quick_load_buttons[slot].config(bg=load_color)
 
 
 def main():

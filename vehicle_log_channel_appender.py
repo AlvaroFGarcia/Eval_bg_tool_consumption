@@ -223,21 +223,21 @@ class VehicleLogChannelAppender:
         x_col_frame = tk.Frame(csv_config_frame)
         x_col_frame.pack(fill="x", padx=5, pady=2)
         tk.Label(x_col_frame, text="X-axis Column (e.g., RPM):", width=25, anchor="w").pack(side="left")
-        self.new_custom_x_col = ttk.Combobox(x_col_frame, width=25, state="readonly")
+        self.new_custom_x_col = AutocompleteCombobox(x_col_frame, width=25)
         self.new_custom_x_col.pack(side="left", padx=5)
         
         # Y axis column (e.g., ETASP)
         y_col_frame = tk.Frame(csv_config_frame)
         y_col_frame.pack(fill="x", padx=5, pady=2)
         tk.Label(y_col_frame, text="Y-axis Column (e.g., ETASP):", width=25, anchor="w").pack(side="left")
-        self.new_custom_y_col = ttk.Combobox(y_col_frame, width=25, state="readonly")
+        self.new_custom_y_col = AutocompleteCombobox(y_col_frame, width=25)
         self.new_custom_y_col.pack(side="left", padx=5)
         
         # Z axis column (values)
         z_col_frame = tk.Frame(csv_config_frame)
         z_col_frame.pack(fill="x", padx=5, pady=2)
         tk.Label(z_col_frame, text="Z-axis Column (Values):", width=25, anchor="w").pack(side="left")
-        self.new_custom_z_col = ttk.Combobox(z_col_frame, width=25, state="readonly")
+        self.new_custom_z_col = AutocompleteCombobox(z_col_frame, width=25)
         self.new_custom_z_col.pack(side="left", padx=5)
         
         # Vehicle log channel selection section
@@ -328,9 +328,9 @@ class VehicleLogChannelAppender:
                 columns = df.columns.tolist()
                 
                 # Update comboboxes with available columns
-                self.new_custom_x_col['values'] = columns
-                self.new_custom_y_col['values'] = columns
-                self.new_custom_z_col['values'] = columns
+                self.new_custom_x_col.set_completion_list(columns)
+                self.new_custom_y_col.set_completion_list(columns)
+                self.new_custom_z_col.set_completion_list(columns)
                 
                 self.log_status(f"Loaded CSV columns: {', '.join(columns)}")
                 
@@ -381,6 +381,9 @@ class VehicleLogChannelAppender:
         
         # Update treeview
         self.refresh_custom_channels_tree()
+        
+        # Auto-save settings to preserve the last used configuration (before clearing)
+        self.save_settings()
         
         # Clear input fields
         self.clear_custom_channel_inputs()
@@ -441,9 +444,9 @@ class VehicleLogChannelAppender:
             df = pd.read_csv(channel['csv_file'], nrows=1)
             columns = df.columns.tolist()
             
-            self.new_custom_x_col['values'] = columns
-            self.new_custom_y_col['values'] = columns
-            self.new_custom_z_col['values'] = columns
+            self.new_custom_x_col.set_completion_list(columns)
+            self.new_custom_y_col.set_completion_list(columns)
+            self.new_custom_z_col.set_completion_list(columns)
             
             self.new_custom_x_col.set(channel['x_column'])
             self.new_custom_y_col.set(channel['y_column'])
@@ -1066,12 +1069,26 @@ class VehicleLogChannelAppender:
                     
                     # Create signal for MDF output
                     if self.output_format.get() == "mf4" and file_ext != '.csv':
+                        # Generate pre-formed comment with all variables used
+                        csv_filename = os.path.basename(channel_config['csv_file'])
+                        pre_formed_comment = (
+                            f"Channel generated from CSV surface table '{csv_filename}' "
+                            f"using X-axis: {channel_config['x_column']} (vehicle: {channel_config['vehicle_x_channel']}), "
+                            f"Y-axis: {channel_config['y_column']} (vehicle: {channel_config['vehicle_y_channel']}), "
+                            f"Z-values: {channel_config['z_column']}. "
+                        )
+                        
+                        # Combine with user comment if provided
+                        final_comment = pre_formed_comment
+                        if channel_config['comment'].strip():
+                            final_comment += f"User comment: {channel_config['comment']}"
+                        
                         signal = Signal(
                             samples=np.array(z_interpolated, dtype=np.float64),
                             timestamps=timestamps,
                             name=channel_config['name'],
                             unit=channel_config['units'],
-                            comment=channel_config['comment']
+                            comment=final_comment
                         )
                         calculated_signals.append(signal)
                     
@@ -1140,10 +1157,24 @@ class VehicleLogChannelAppender:
     def save_settings(self):
         """Save current settings to file"""
         try:
+            # Capture current form values for last channel settings
+            last_channel_settings = {
+                'name': self.new_custom_name.get(),
+                'csv_file': self.new_custom_csv.get(),
+                'x_column': self.new_custom_x_col.get(),
+                'y_column': self.new_custom_y_col.get(),
+                'z_column': self.new_custom_z_col.get(),
+                'vehicle_x_channel': self.new_custom_veh_x.get(),
+                'vehicle_y_channel': self.new_custom_veh_y.get(),
+                'units': self.new_custom_units.get(),
+                'comment': self.new_custom_comment.get()
+            }
+            
             settings = {
                 'vehicle_file': self.vehicle_file_path,
                 'custom_channels': self.custom_channels,
                 'output_format': self.output_format.get(),
+                'last_channel_settings': last_channel_settings,
                 'last_updated': datetime.now().isoformat()
             }
             
@@ -1179,10 +1210,68 @@ class VehicleLogChannelAppender:
                 if settings.get('output_format'):
                     self.output_format.set(settings['output_format'])
                 
+                # Load last channel settings
+                if settings.get('last_channel_settings'):
+                    self.restore_last_channel_settings(settings['last_channel_settings'])
+                
                 self.log_status("Settings loaded successfully")
                 
         except Exception as e:
             self.log_status(f"Error loading settings: {str(e)}")
+
+    def restore_last_channel_settings(self, last_settings):
+        """Restore the last channel creation settings"""
+        try:
+            # Restore form fields
+            self.new_custom_name.delete(0, tk.END)
+            if last_settings.get('name'):
+                self.new_custom_name.insert(0, last_settings['name'])
+            
+            self.new_custom_csv.delete(0, tk.END)
+            if last_settings.get('csv_file'):
+                self.new_custom_csv.insert(0, last_settings['csv_file'])
+                
+                # If CSV file exists, load its columns
+                if os.path.exists(last_settings['csv_file']):
+                    try:
+                        df = pd.read_csv(last_settings['csv_file'], nrows=1)
+                        columns = df.columns.tolist()
+                        
+                        # Update comboboxes with available columns
+                        self.new_custom_x_col.set_completion_list(columns)
+                        self.new_custom_y_col.set_completion_list(columns)
+                        self.new_custom_z_col.set_completion_list(columns)
+                        
+                        # Set the previously selected columns
+                        if last_settings.get('x_column'):
+                            self.new_custom_x_col.set(last_settings['x_column'])
+                        if last_settings.get('y_column'):
+                            self.new_custom_y_col.set(last_settings['y_column'])
+                        if last_settings.get('z_column'):
+                            self.new_custom_z_col.set(last_settings['z_column'])
+                            
+                    except Exception as e:
+                        self.log_status(f"Warning: Could not reload CSV columns: {str(e)}")
+            
+            # Restore vehicle channel selections
+            if last_settings.get('vehicle_x_channel'):
+                self.new_custom_veh_x.set(last_settings['vehicle_x_channel'])
+            if last_settings.get('vehicle_y_channel'):
+                self.new_custom_veh_y.set(last_settings['vehicle_y_channel'])
+            
+            # Restore units and comment
+            self.new_custom_units.delete(0, tk.END)
+            if last_settings.get('units'):
+                self.new_custom_units.insert(0, last_settings['units'])
+                
+            self.new_custom_comment.delete(0, tk.END)
+            if last_settings.get('comment'):
+                self.new_custom_comment.insert(0, last_settings['comment'])
+            
+            self.log_status("Last channel settings restored")
+            
+        except Exception as e:
+            self.log_status(f"Error restoring last channel settings: {str(e)}")
 
     def log_status(self, message):
         """Add a timestamped message to the status log"""

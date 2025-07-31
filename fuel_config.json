@@ -1,19 +1,13 @@
 {
-  "last_used_files": {
-    "mdf_files": [
-      "C:/Users/BRM1511/Desktop/Aquisicoes_Drive_Session_363BSG/2025-07-17_YS82471__363_BSG_NP__6_Rodagem_Joao.dat"
-    ]
-  },
-  "rpm_channel": "RPMX1",
-  "etasp_channel": "ETASP",
-  "z_param_channel": "CIGN_DANG_FDBK_V_[0]",
-  "raster_value": 0.02,
-  "filters": [
-    {
-      "channel": "PTC_PDL_POS",
-      "condition": "within range",
-      "min": 5.0,
-      "max": 102.0
-    }
-  ]
+  "csv_columns": {
+    "x_column": "RPM",
+    "y_column": "ETASP",
+    "z_column": "AVANCE_1",
+    "rpm_min": 1100.0,
+    "rpm_max": 4000.0,
+    "rpm_intervals": 16,
+    "etasp_min": 0.212,
+    "etasp_max": 2.315,
+    "etasp_intervals": 16
+  }
 }

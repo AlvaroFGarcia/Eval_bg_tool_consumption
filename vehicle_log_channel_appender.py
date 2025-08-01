@@ -20,7 +20,6 @@ Recent Improvements:
 - Added column filters for better data management
 - Preserved form settings after adding channels for faster workflow
 - Enhanced settings management with user-defined save/load options
-- MODERNIZED UI: Improved visual design, better button sizes, responsive layout
 """
 
 import numpy as np
@@ -81,38 +80,8 @@ class AutocompleteCombobox(ttk.Combobox):
 class VehicleLogChannelAppender:
     def __init__(self):
         self.root = tk.Tk()
-        self.root.title("🚗 Vehicle Log Channel Appender - Multi-Channel Tool")
-        
-        # Modern window sizing and positioning
-        self.root.geometry("1400x900")
-        self.root.minsize(1200, 700)
-        
-        # Center window on screen
-        self.center_window()
-        
-        # Modern color scheme
-        self.colors = {
-            'bg_primary': '#f8f9fa',
-            'bg_secondary': '#ffffff', 
-            'bg_accent': '#e9ecef',
-            'text_primary': '#212529',
-            'text_secondary': '#6c757d',
-            'border': '#dee2e6',
-            'success': '#28a745',
-            'warning': '#ffc107',
-            'danger': '#dc3545',
-            'info': '#17a2b8',
-            'primary': '#007bff',
-            'button_hover': '#0056b3',
-            'log_bg': '#1e1e1e',
-            'log_text': '#ffffff'
-        }
-        
-        # Configure root window style
-        self.root.configure(bg=self.colors['bg_primary'])
-        
-        # Configure ttk styles for modern look
-        self.setup_styles()
+        self.root.title("Vehicle Log Channel Appender - Multi-Channel Tool")
+        self.root.geometry("1200x800")
         
         # Data storage
         self.vehicle_file_path = None
@@ -129,566 +98,215 @@ class VehicleLogChannelAppender:
         # Tooltip window reference
         self.tooltip_window = None
         
-        # Create GUI
-        self.create_widgets()
-        
-        # Load last settings if they exist
-        self.auto_load_last_settings()
-        
-        # Set up window close event
+        # Bind close event
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
-    
-    def center_window(self):
-        """Center the window on the screen"""
-        self.root.update_idletasks()
-        width = self.root.winfo_width()
-        height = self.root.winfo_height()
-        x = (self.root.winfo_screenwidth() // 2) - (width // 2)
-        y = (self.root.winfo_screenheight() // 2) - (height // 2)
-        self.root.geometry(f'{width}x{height}+{x}+{y}')
-    
-    def setup_styles(self):
-        """Configure modern ttk styles"""
-        style = ttk.Style()
         
-        # Configure notebook style
-        style.configure('Modern.TNotebook', 
-                       background=self.colors['bg_primary'],
-                       borderwidth=0)
-        style.configure('Modern.TNotebook.Tab',
-                       background=self.colors['bg_accent'],
-                       foreground=self.colors['text_primary'],
-                       padding=[20, 10],
-                       font=('Segoe UI', 10, 'bold'))
-        style.map('Modern.TNotebook.Tab',
-                 background=[('selected', self.colors['bg_secondary']),
-                           ('active', self.colors['bg_accent'])])
+        self.setup_ui()
+        self.load_settings()
         
-        # Configure frame styles
-        style.configure('Modern.TFrame',
-                       background=self.colors['bg_secondary'],
-                       relief='flat',
-                       borderwidth=1)
+    def setup_ui(self):
+        """Setup the user interface with tabbed layout"""
         
-        # Configure button styles
-        style.configure('Modern.TButton',
-                       font=('Segoe UI', 10),
-                       padding=[10, 8])
+        # Title
+        title_label = tk.Label(self.root, text="Vehicle Log Channel Appender", 
+                              font=("Arial", 16, "bold"))
+        title_label.pack(pady=10)
         
-        # Configure entry styles
-        style.configure('Modern.TEntry',
-                       font=('Segoe UI', 10),
-                       padding=[5, 5])
-
-    def create_widgets(self):
-        # Create main container with padding
-        main_container = tk.Frame(self.root, bg=self.colors['bg_primary'])
-        main_container.pack(fill="both", expand=True, padx=15, pady=15)
-        
-        # Create notebook with modern styling
-        self.notebook = ttk.Notebook(main_container, style='Modern.TNotebook')
-        self.notebook.pack(fill="both", expand=True, pady=(0, 15))
+        # Create notebook for tabs
+        self.notebook = ttk.Notebook(self.root)
+        self.notebook.pack(fill="both", expand=True, padx=20, pady=10)
         
         # Setup tabs
         self.setup_processing_tab()
         self.setup_custom_channels_tab()
         
-        # Modern Status/Log area with better sizing
-        log_container = tk.Frame(main_container, bg=self.colors['bg_primary'])
-        log_container.pack(fill="both", expand=True, pady=(0, 15))
+        # Status/Log area (outside tabs)
+        log_frame = tk.LabelFrame(self.root, text="Status Log", font=("Arial", 10, "bold"))
+        log_frame.pack(fill="both", expand=True, padx=20, pady=(0, 20))
         
-        # Status log with modern styling
-        log_frame = tk.LabelFrame(log_container, 
-                                 text="📋 Status Log", 
-                                 font=("Segoe UI", 12, "bold"),
-                                 bg=self.colors['bg_secondary'],
-                                 fg=self.colors['text_primary'],
-                                 relief='solid',
-                                 borderwidth=1,
-                                 bd=1)
-        log_frame.pack(fill="both", expand=True)
+        # Create scrollable text widget
+        text_frame = tk.Frame(log_frame)
+        text_frame.pack(fill="both", expand=True, padx=5, pady=5)
         
-        # Create modern scrollable text widget with better height
-        text_frame = tk.Frame(log_frame, bg=self.colors['bg_secondary'])
-        text_frame.pack(fill="both", expand=True, padx=10, pady=10)
-        
-        # Modern log text area with dark theme for better readability
-        self.log_text = tk.Text(text_frame, 
-                               height=8,  # Increased from 6 to 8
-                               wrap=tk.WORD,
-                               bg=self.colors['log_bg'],
-                               fg=self.colors['log_text'],
-                               font=('Consolas', 10),
-                               relief='flat',
-                               borderwidth=0,
-                               padx=10,
-                               pady=5)
-        
-        # Modern scrollbar
-        scrollbar = tk.Scrollbar(text_frame, 
-                               orient="vertical", 
-                               command=self.log_text.yview,
-                               bg=self.colors['bg_accent'],
-                               troughcolor=self.colors['bg_accent'],
-                               activebackground=self.colors['primary'])
+        self.log_text = tk.Text(text_frame, height=6, wrap=tk.WORD)
+        scrollbar = tk.Scrollbar(text_frame, orient="vertical", command=self.log_text.yview)
         self.log_text.configure(yscrollcommand=scrollbar.set)
         
         self.log_text.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
         
-        # Modern Settings section with better layout
-        settings_container = tk.Frame(main_container, bg=self.colors['bg_primary'])
-        settings_container.pack(fill="x", pady=(0, 10))
+        # Enhanced Settings buttons
+        settings_frame = tk.Frame(self.root)
+        settings_frame.pack(fill="x", padx=20, pady=(0, 10))
         
-        # Create sections for better organization
-        self.create_status_section(settings_container)
-        self.create_main_buttons_section(settings_container)
-        self.create_quick_actions_section(settings_container)
+        # Auto-save status
+        status_frame = tk.Frame(settings_frame)
+        status_frame.pack(side="left", fill="x", expand=True)
         
-        self.log_status("🚀 Application started. Please select a vehicle file and configure custom channels.")
-
-    def create_status_section(self, parent):
-        """Create the auto-save status section"""
-        status_frame = tk.Frame(parent, bg=self.colors['bg_secondary'], relief='solid', bd=1)
-        status_frame.pack(side="left", fill="y", padx=(0, 10), pady=5)
+        tk.Label(status_frame, text="Auto-save: ON", font=("Arial", 9), fg="green").pack(side="left", padx=5)
+        tk.Label(status_frame, text="●", font=("Arial", 12), fg="lightgreen").pack(side="left")
         
-        # Auto-save indicator with modern styling
-        auto_save_frame = tk.Frame(status_frame, bg=self.colors['bg_secondary'])
-        auto_save_frame.pack(fill="x", padx=10, pady=8)
+        # Main settings buttons
+        main_settings_frame = tk.Frame(settings_frame)
+        main_settings_frame.pack(side="right")
         
-        tk.Label(auto_save_frame, 
-                text="🔄 Auto-save: ON", 
-                font=("Segoe UI", 10, "bold"), 
-                fg=self.colors['success'],
-                bg=self.colors['bg_secondary']).pack(side="left")
+        tk.Button(main_settings_frame, text="💾 Save Settings As...", command=self.save_settings_as, 
+                 bg="lightgreen", font=("Arial", 9, "bold")).pack(side="left", padx=2)
+        tk.Button(main_settings_frame, text="📁 Load Settings From...", command=self.load_settings_from, 
+                 bg="lightblue", font=("Arial", 9, "bold")).pack(side="left", padx=2)
         
-        # Status indicator dot
-        tk.Label(auto_save_frame, 
-                text="●", 
-                font=("Segoe UI", 14), 
-                fg=self.colors['success'],
-                bg=self.colors['bg_secondary']).pack(side="left", padx=(5, 0))
-
-    def create_main_buttons_section(self, parent):
-        """Create the main action buttons section"""
-        main_buttons_frame = tk.Frame(parent, bg=self.colors['bg_primary'])
-        main_buttons_frame.pack(side="left", fill="both", expand=True, padx=5)
+        # Quick save/load section
+        quick_frame = tk.Frame(settings_frame)
+        quick_frame.pack(side="right", padx=(10, 0))
         
-        # Primary actions row
-        primary_row = tk.Frame(main_buttons_frame, bg=self.colors['bg_primary'])
-        primary_row.pack(fill="x", pady=(0, 5))
-        
-        # Save button
-        save_btn = tk.Button(primary_row, 
-                           text="💾 Save Settings As...",
-                           command=self.save_settings_as,
-                           bg=self.colors['success'],
-                           fg='white',
-                           font=("Segoe UI", 11, "bold"),
-                           relief='flat',
-                           borderwidth=0,
-                           padx=20,
-                           pady=10,
-                           cursor='hand2')
-        save_btn.pack(side="left", padx=(0, 8))
-        self.add_button_hover_effect(save_btn, self.colors['success'], '#1e7e34')
-        
-        # Load button
-        load_btn = tk.Button(primary_row,
-                           text="📁 Load Settings From...",
-                           command=self.load_settings_from,
-                           bg=self.colors['info'],
-                           fg='white',
-                           font=("Segoe UI", 11, "bold"),
-                           relief='flat',
-                           borderwidth=0,
-                           padx=20,
-                           pady=10,
-                           cursor='hand2')
-        load_btn.pack(side="left", padx=(0, 8))
-        self.add_button_hover_effect(load_btn, self.colors['info'], '#117a8b')
-        
-        # Reset button
-        reset_btn = tk.Button(primary_row,
-                            text="🔄 Reset All",
-                            command=self.reset_to_defaults,
-                            bg=self.colors['warning'],
-                            fg='white',
-                            font=("Segoe UI", 11, "bold"),
-                            relief='flat',
-                            borderwidth=0,
-                            padx=20,
-                            pady=10,
-                            cursor='hand2')
-        reset_btn.pack(side="left")
-        self.add_button_hover_effect(reset_btn, self.colors['warning'], '#d39e00')
-
-    def create_quick_actions_section(self, parent):
-        """Create the quick save/load section with modern styling"""
-        quick_container = tk.Frame(parent, bg=self.colors['bg_secondary'], relief='solid', bd=1)
-        quick_container.pack(side="right", padx=(10, 0), pady=5)
-        
-        # Title
-        title_frame = tk.Frame(quick_container, bg=self.colors['bg_secondary'])
-        title_frame.pack(fill="x", padx=10, pady=(8, 5))
-        
-        tk.Label(title_frame, 
-                text="⚡ Quick Actions", 
-                font=("Segoe UI", 10, "bold"),
-                fg=self.colors['text_primary'],
-                bg=self.colors['bg_secondary']).pack()
-        
-        # Quick save/load grid
-        quick_grid = tk.Frame(quick_container, bg=self.colors['bg_secondary'])
-        quick_grid.pack(padx=10, pady=(0, 8))
+        tk.Label(quick_frame, text="Quick:", font=("Arial", 8)).pack(side="left")
         
         # Store references to quick save/load buttons for updating indicators
         self.quick_save_buttons = {}
         self.quick_load_buttons = {}
         
-        # Quick save slots (1-3) with modern design
-        for i in range(1, 3):  # Reduced to 2 slots for cleaner look
-            slot_frame = tk.Frame(quick_grid, bg=self.colors['bg_secondary'])
-            slot_frame.grid(row=0, column=i-1, padx=5)
-            
-            # Slot label
-            tk.Label(slot_frame, 
-                    text=f"Slot {i}", 
-                    font=("Segoe UI", 9),
-                    fg=self.colors['text_secondary'],
-                    bg=self.colors['bg_secondary']).pack()
+        # Quick save slots (1-3)
+        for i in range(1, 4):
+            btn_frame = tk.Frame(quick_frame)
+            btn_frame.pack(side="left", padx=1)
             
             # Check if slot has data
             slot_has_data = os.path.exists(f"quick_save_slot_{i}.json")
+            save_color = "lightgreen" if not slot_has_data else "green"
+            load_color = "lightblue" if slot_has_data else "lightgray"
             
-            # Save button with modern styling
-            save_btn = tk.Button(slot_frame, 
-                               text=f"💾 Save",
-                               command=lambda slot=i: self.quick_save_settings(slot),
-                               bg=self.colors['primary'],
-                               fg='white',
-                               font=("Segoe UI", 9, "bold"),
-                               relief='flat',
-                               borderwidth=0,
-                               width=8,
-                               pady=5,
-                               cursor='hand2')
-            save_btn.pack(pady=(2, 1))
+            # Save button
+            save_btn = tk.Button(btn_frame, text=f"S{i}", command=lambda slot=i: self.quick_save_settings(slot), 
+                     bg=save_color, font=("Arial", 7), width=3, height=1)
+            save_btn.pack(side="top")
             self.quick_save_buttons[i] = save_btn
-            self.add_button_hover_effect(save_btn, self.colors['primary'], self.colors['button_hover'])
             
-            # Load button with conditional styling
-            load_color = self.colors['success'] if slot_has_data else self.colors['bg_accent']
-            load_text_color = 'white' if slot_has_data else self.colors['text_secondary']
-            load_btn = tk.Button(slot_frame,
-                               text=f"📂 Load",
-                               command=lambda slot=i: self.quick_load_settings(slot),
-                               bg=load_color,
-                               fg=load_text_color,
-                               font=("Segoe UI", 9, "bold"),
-                               relief='flat',
-                               borderwidth=0,
-                               width=8,
-                               pady=5,
-                               cursor='hand2' if slot_has_data else 'arrow')
-            load_btn.pack()
+            # Load button  
+            load_btn = tk.Button(btn_frame, text=f"L{i}", command=lambda slot=i: self.quick_load_settings(slot), 
+                     bg=load_color, font=("Arial", 7), width=3, height=1)
+            load_btn.pack(side="top")
             self.quick_load_buttons[i] = load_btn
-            
-            if slot_has_data:
-                self.add_button_hover_effect(load_btn, self.colors['success'], '#1e7e34')
             
             # Add tooltip effect on hover
             self.add_slot_tooltip(save_btn, load_btn, i)
-
-    def add_button_hover_effect(self, button, normal_color, hover_color):
-        """Add hover effect to buttons"""
-        def on_enter(e):
-            button.configure(bg=hover_color)
         
-        def on_leave(e):
-            button.configure(bg=normal_color)
+        # Reset button
+        tk.Button(main_settings_frame, text="🔄 Reset", command=self.reset_to_defaults, 
+                 bg="lightyellow", font=("Arial", 9)).pack(side="left", padx=2)
         
-        button.bind('<Enter>', on_enter)
-        button.bind('<Leave>', on_leave)
+        self.log_status("Application started. Please select a vehicle file and configure custom channels.")
 
     def setup_processing_tab(self):
-        """Setup the main processing tab with modern styling"""
-        self.processing_frame = ttk.Frame(self.notebook, style='Modern.TFrame')
-        self.notebook.add(self.processing_frame, text="🔧 Processing")
+        """Setup the main processing tab"""
+        self.processing_frame = ttk.Frame(self.notebook)
+        self.notebook.add(self.processing_frame, text="Processing")
         
-        # Create main container with padding
-        main_container = tk.Frame(self.processing_frame, bg=self.colors['bg_secondary'])
-        main_container.pack(fill="both", expand=True, padx=20, pady=20)
+        # Vehicle file selection
+        file_frame = tk.LabelFrame(self.processing_frame, text="Vehicle Log File", 
+                                  font=("Arial", 12, "bold"))
+        file_frame.pack(fill="x", padx=20, pady=10)
         
-        # Vehicle file selection with modern styling
-        file_frame = tk.LabelFrame(main_container, 
-                                  text="📁 Vehicle Log File", 
-                                  font=("Segoe UI", 12, "bold"),
-                                  bg=self.colors['bg_secondary'],
-                                  fg=self.colors['text_primary'],
-                                  relief='solid',
-                                  bd=1)
-        file_frame.pack(fill="x", pady=(0, 20))
+        vehicle_btn_frame = tk.Frame(file_frame)
+        vehicle_btn_frame.pack(fill="x", padx=10, pady=10)
         
-        vehicle_container = tk.Frame(file_frame, bg=self.colors['bg_secondary'])
-        vehicle_container.pack(fill="x", padx=15, pady=15)
+        self.vehicle_btn = tk.Button(vehicle_btn_frame, text="Select Vehicle File (MDF/MF4/DAT/CSV)", 
+                                    command=self.select_vehicle_file, bg="lightgreen")
+        self.vehicle_btn.pack(side="left")
         
-        # Modern file selection button
-        self.vehicle_btn = tk.Button(vehicle_container, 
-                                    text="📂 Select Vehicle File (MDF/MF4/DAT/CSV)", 
-                                    command=self.select_vehicle_file, 
-                                    bg=self.colors['primary'],
-                                    fg='white',
-                                    font=("Segoe UI", 11, "bold"),
-                                    relief='flat',
-                                    borderwidth=0,
-                                    padx=25,
-                                    pady=12,
-                                    cursor='hand2')
-        self.vehicle_btn.pack(anchor="w", pady=(0, 10))
-        self.add_button_hover_effect(self.vehicle_btn, self.colors['primary'], self.colors['button_hover'])
+        self.vehicle_status = tk.Label(vehicle_btn_frame, text="No vehicle file selected", fg="red")
+        self.vehicle_status.pack(side="left", padx=10)
         
-        # Modern status display
-        status_container = tk.Frame(vehicle_container, bg=self.colors['bg_accent'], relief='solid', bd=1)
-        status_container.pack(fill="x", pady=(5, 0))
+        # Processing options
+        options_frame = tk.LabelFrame(self.processing_frame, text="Processing Options", 
+                                     font=("Arial", 12, "bold"))
+        options_frame.pack(fill="x", padx=20, pady=10)
         
-        self.vehicle_status = tk.Label(status_container, 
-                                      text="⚠️ No vehicle file selected", 
-                                      fg=self.colors['warning'],
-                                      bg=self.colors['bg_accent'],
-                                      font=("Segoe UI", 10),
-                                      padx=15,
-                                      pady=8)
-        self.vehicle_status.pack(anchor="w")
+        # Output format selection
+        format_frame = tk.Frame(options_frame)
+        format_frame.pack(fill="x", padx=10, pady=5)
         
-        # Processing options with modern styling
-        options_frame = tk.LabelFrame(main_container, 
-                                     text="⚙️ Processing Options", 
-                                     font=("Segoe UI", 12, "bold"),
-                                     bg=self.colors['bg_secondary'],
-                                     fg=self.colors['text_primary'],
-                                     relief='solid',
-                                     bd=1)
-        options_frame.pack(fill="x", pady=(0, 20))
-        
-        # Output format selection with modern radio buttons
-        format_container = tk.Frame(options_frame, bg=self.colors['bg_secondary'])
-        format_container.pack(fill="x", padx=15, pady=15)
-        
-        tk.Label(format_container, 
-                text="📤 Output Format:", 
-                font=("Segoe UI", 11, "bold"),
-                bg=self.colors['bg_secondary'],
-                fg=self.colors['text_primary']).pack(anchor="w", pady=(0, 10))
+        tk.Label(format_frame, text="Output Format:", font=("Arial", 10, "bold")).pack(anchor="w")
         
         self.output_format = tk.StringVar(value="mf4")
+        tk.Radiobutton(format_frame, text="MF4 (Recommended for calculated channels)", 
+                      variable=self.output_format, value="mf4").pack(anchor="w", padx=20)
+        tk.Radiobutton(format_frame, text="CSV (For data analysis)", 
+                      variable=self.output_format, value="csv").pack(anchor="w", padx=20)
         
-        # MF4 option
-        mf4_frame = tk.Frame(format_container, bg=self.colors['bg_secondary'])
-        mf4_frame.pack(fill="x", pady=2)
-        mf4_radio = tk.Radiobutton(mf4_frame, 
-                                  text="🔧 MF4 (Recommended for calculated channels)", 
-                                  variable=self.output_format, 
-                                  value="mf4",
-                                  bg=self.colors['bg_secondary'],
-                                  fg=self.colors['text_primary'],
-                                  font=("Segoe UI", 10),
-                                  selectcolor=self.colors['bg_accent'])
-        mf4_radio.pack(anchor="w", padx=15)
+        # Processing section
+        process_frame = tk.LabelFrame(self.processing_frame, text="Process Channels", 
+                                     font=("Arial", 12, "bold"))
+        process_frame.pack(fill="x", padx=20, pady=10)
         
-        # CSV option
-        csv_frame = tk.Frame(format_container, bg=self.colors['bg_secondary'])
-        csv_frame.pack(fill="x", pady=2)
-        csv_radio = tk.Radiobutton(csv_frame, 
-                                  text="📊 CSV (For data analysis)", 
-                                  variable=self.output_format, 
-                                  value="csv",
-                                  bg=self.colors['bg_secondary'],
-                                  fg=self.colors['text_primary'],
-                                  font=("Segoe UI", 10),
-                                  selectcolor=self.colors['bg_accent'])
-        csv_radio.pack(anchor="w", padx=15)
+        info_frame = tk.Frame(process_frame)
+        info_frame.pack(fill="x", padx=10, pady=5)
         
-        # Processing section with modern styling
-        process_frame = tk.LabelFrame(main_container, 
-                                     text="🚀 Process Channels", 
-                                     font=("Segoe UI", 12, "bold"),
-                                     bg=self.colors['bg_secondary'],
-                                     fg=self.colors['text_primary'],
-                                     relief='solid',
-                                     bd=1)
-        process_frame.pack(fill="both", expand=True)
-        
-        process_container = tk.Frame(process_frame, bg=self.colors['bg_secondary'])
-        process_container.pack(fill="both", expand=True, padx=15, pady=15)
-        
-        # Modern info panel
-        info_panel = tk.Frame(process_container, bg=self.colors['bg_accent'], relief='solid', bd=1)
-        info_panel.pack(fill="x", pady=(0, 15))
-        
-        info_text = ("💡 Configure custom channels in the 'Custom Channels' tab, then process them here.\n"
+        info_text = ("Configure custom channels in the 'Custom Channels' tab, then process them here.\n"
                     "The tool will create calculated channels based on surface table interpolation.")
-        tk.Label(info_panel, 
-                text=info_text, 
-                font=("Segoe UI", 10), 
-                fg=self.colors['info'],
-                bg=self.colors['bg_accent'],
-                justify="left",
-                padx=15,
-                pady=10).pack(anchor="w")
+        tk.Label(info_frame, text=info_text, font=("Arial", 9), fg="blue", justify="left").pack(anchor="w")
         
-        # Modern process button
-        process_btn_container = tk.Frame(process_container, bg=self.colors['bg_secondary'])
-        process_btn_container.pack(fill="x")
+        process_btn_frame = tk.Frame(process_frame)
+        process_btn_frame.pack(fill="x", padx=10, pady=10)
         
-        self.process_btn = tk.Button(process_btn_container, 
-                                    text="🚀 Process All Custom Channels", 
-                                    command=self.process_all_channels, 
-                                    bg=self.colors['success'],
-                                    fg='white',
-                                    font=("Segoe UI", 14, "bold"),
-                                    relief='flat',
-                                    borderwidth=0,
-                                    padx=30,
-                                    pady=15,
-                                    cursor='hand2')
-        self.process_btn.pack(expand=True)
-        self.add_button_hover_effect(self.process_btn, self.colors['success'], '#1e7e34')
+        self.process_btn = tk.Button(process_btn_frame, text="Process All Custom Channels", 
+                                    command=self.process_all_channels, bg="orange", 
+                                    font=("Arial", 12, "bold"))
+        self.process_btn.pack()
 
     def setup_custom_channels_tab(self):
         """Setup the custom channels tab with enhanced search and filter functionality"""
-        self.custom_channels_frame = ttk.Frame(self.notebook, style='Modern.TFrame')
-        self.notebook.add(self.custom_channels_frame, text="🎛️ Custom Channels")
+        self.custom_channels_frame = ttk.Frame(self.notebook)
+        self.notebook.add(self.custom_channels_frame, text="Custom Channels")
         
-        # Create main container
-        main_container = tk.Frame(self.custom_channels_frame, bg=self.colors['bg_secondary'])
-        main_container.pack(fill="both", expand=True, padx=20, pady=20)
+        # Title
+        title_label = tk.Label(self.custom_channels_frame, text="Custom Channel Management", 
+                              font=("Arial", 14, "bold"))
+        title_label.pack(pady=10)
         
-        # Modern title section
-        title_container = tk.Frame(main_container, bg=self.colors['bg_primary'], relief='solid', bd=1)
-        title_container.pack(fill="x", pady=(0, 20))
+        # Add new channel section
+        add_frame = tk.LabelFrame(self.custom_channels_frame, text="Add New Custom Channel", 
+                                 font=("Arial", 12, "bold"))
+        add_frame.pack(fill="x", padx=20, pady=10)
         
-        title_label = tk.Label(title_container, 
-                              text="🎛️ Custom Channel Management", 
-                              font=("Segoe UI", 16, "bold"),
-                              bg=self.colors['bg_primary'],
-                              fg=self.colors['text_primary'],
-                              pady=15)
-        title_label.pack()
+        # Channel name
+        name_frame = tk.Frame(add_frame)
+        name_frame.pack(fill="x", padx=10, pady=5)
+        tk.Label(name_frame, text="Channel Name:", width=18, anchor="w").pack(side="left")
+        self.new_custom_name = tk.Entry(name_frame, width=30)
+        self.new_custom_name.pack(side="left", padx=5)
         
-        # Add new channel section with modern styling
-        add_frame = tk.LabelFrame(main_container, 
-                                 text="➕ Add New Custom Channel", 
-                                 font=("Segoe UI", 12, "bold"),
-                                 bg=self.colors['bg_secondary'],
-                                 fg=self.colors['text_primary'],
-                                 relief='solid',
-                                 bd=1)
-        add_frame.pack(fill="x", pady=(0, 20))
+        # CSV Surface Table file
+        csv_frame = tk.Frame(add_frame)
+        csv_frame.pack(fill="x", padx=10, pady=5)
+        tk.Label(csv_frame, text="Surface Table CSV:", width=18, anchor="w").pack(side="left")
+        self.new_custom_csv = tk.Entry(csv_frame, width=40)
+        self.new_custom_csv.pack(side="left", padx=5)
+        tk.Button(csv_frame, text="Browse", command=self.browse_custom_csv).pack(side="left", padx=5)
         
-        # Create form container with padding
-        form_container = tk.Frame(add_frame, bg=self.colors['bg_secondary'])
-        form_container.pack(fill="x", padx=15, pady=15)
-        
-        # Channel name with modern styling
-        name_frame = tk.Frame(form_container, bg=self.colors['bg_secondary'])
-        name_frame.pack(fill="x", pady=(0, 10))
-        tk.Label(name_frame, 
-                text="📝 Channel Name:", 
-                width=20, 
-                anchor="w",
-                font=("Segoe UI", 10, "bold"),
-                bg=self.colors['bg_secondary'],
-                fg=self.colors['text_primary']).pack(side="left")
-        self.new_custom_name = tk.Entry(name_frame, 
-                                       width=35,
-                                       font=("Segoe UI", 10),
-                                       relief='solid',
-                                       bd=1)
-        self.new_custom_name.pack(side="left", padx=10)
-        
-        # CSV Surface Table file with modern styling
-        csv_frame = tk.Frame(form_container, bg=self.colors['bg_secondary'])
-        csv_frame.pack(fill="x", pady=(0, 10))
-        tk.Label(csv_frame, 
-                text="📊 Surface Table CSV:", 
-                width=20, 
-                anchor="w",
-                font=("Segoe UI", 10, "bold"),
-                bg=self.colors['bg_secondary'],
-                fg=self.colors['text_primary']).pack(side="left")
-        self.new_custom_csv = tk.Entry(csv_frame, 
-                                      width=40,
-                                      font=("Segoe UI", 10),
-                                      relief='solid',
-                                      bd=1)
-        self.new_custom_csv.pack(side="left", padx=(10, 5))
-        
-        browse_btn = tk.Button(csv_frame, 
-                              text="📁 Browse", 
-                              command=self.browse_custom_csv,
-                              bg=self.colors['info'],
-                              fg='white',
-                              font=("Segoe UI", 9, "bold"),
-                              relief='flat',
-                              borderwidth=0,
-                              padx=15,
-                              pady=5,
-                              cursor='hand2')
-        browse_btn.pack(side="left", padx=5)
-        self.add_button_hover_effect(browse_btn, self.colors['info'], '#117a8b')
-        
-        # CSV column configuration section with modern styling
-        csv_config_frame = tk.LabelFrame(form_container, 
-                                        text="📋 CSV Surface Table Configuration",
-                                        font=("Segoe UI", 11, "bold"),
-                                        bg=self.colors['bg_secondary'],
-                                        fg=self.colors['text_primary'],
-                                        relief='solid',
-                                        bd=1)
-        csv_config_frame.pack(fill="x", pady=(0, 10))
-        
-        csv_config_container = tk.Frame(csv_config_frame, bg=self.colors['bg_secondary'])
-        csv_config_container.pack(fill="x", padx=10, pady=10)
+        # CSV column configuration section
+        csv_config_frame = tk.LabelFrame(add_frame, text="CSV Surface Table Configuration")
+        csv_config_frame.pack(fill="x", padx=10, pady=5)
         
         # X axis column (e.g., RPM)
-        x_col_frame = tk.Frame(csv_config_container, bg=self.colors['bg_secondary'])
-        x_col_frame.pack(fill="x", pady=(0, 8))
-        tk.Label(x_col_frame, 
-                text="📊 X-axis Column (e.g., RPM):", 
-                width=30, 
-                anchor="w",
-                font=("Segoe UI", 10),
-                bg=self.colors['bg_secondary'],
-                fg=self.colors['text_primary']).pack(side="left")
-        self.new_custom_x_col = AutocompleteCombobox(x_col_frame, width=25, font=("Segoe UI", 10))
-        self.new_custom_x_col.pack(side="left", padx=10)
+        x_col_frame = tk.Frame(csv_config_frame)
+        x_col_frame.pack(fill="x", padx=5, pady=2)
+        tk.Label(x_col_frame, text="X-axis Column (e.g., RPM):", width=25, anchor="w").pack(side="left")
+        self.new_custom_x_col = AutocompleteCombobox(x_col_frame, width=25)
+        self.new_custom_x_col.pack(side="left", padx=5)
         
         # Y axis column (e.g., ETASP)
-        y_col_frame = tk.Frame(csv_config_container, bg=self.colors['bg_secondary'])
-        y_col_frame.pack(fill="x", pady=(0, 8))
-        tk.Label(y_col_frame, 
-                text="📊 Y-axis Column (e.g., ETASP):", 
-                width=30, 
-                anchor="w",
-                font=("Segoe UI", 10),
-                bg=self.colors['bg_secondary'],
-                fg=self.colors['text_primary']).pack(side="left")
-        self.new_custom_y_col = AutocompleteCombobox(y_col_frame, width=25, font=("Segoe UI", 10))
-        self.new_custom_y_col.pack(side="left", padx=10)
+        y_col_frame = tk.Frame(csv_config_frame)
+        y_col_frame.pack(fill="x", padx=5, pady=2)
+        tk.Label(y_col_frame, text="Y-axis Column (e.g., ETASP):", width=25, anchor="w").pack(side="left")
+        self.new_custom_y_col = AutocompleteCombobox(y_col_frame, width=25)
+        self.new_custom_y_col.pack(side="left", padx=5)
         
         # Z axis column (values)
-        z_col_frame = tk.Frame(csv_config_container, bg=self.colors['bg_secondary'])
-        z_col_frame.pack(fill="x")
-        tk.Label(z_col_frame, 
-                text="📊 Z-axis Column (Values):", 
-                width=30, 
-                anchor="w",
-                font=("Segoe UI", 10),
-                bg=self.colors['bg_secondary'],
-                fg=self.colors['text_primary']).pack(side="left")
-        self.new_custom_z_col = AutocompleteCombobox(z_col_frame, width=25, font=("Segoe UI", 10))
-        self.new_custom_z_col.pack(side="left", padx=10)
+        z_col_frame = tk.Frame(csv_config_frame)
+        z_col_frame.pack(fill="x", padx=5, pady=2)
+        tk.Label(z_col_frame, text="Z-axis Column (Values):", width=25, anchor="w").pack(side="left")
+        self.new_custom_z_col = AutocompleteCombobox(z_col_frame, width=25)
+        self.new_custom_z_col.pack(side="left", padx=5)
         
         # Vehicle log channel selection section
         veh_config_frame = tk.LabelFrame(add_frame, text="Vehicle Log Channel Selection")
@@ -1115,7 +733,7 @@ class VehicleLogChannelAppender:
             return
             
         self.vehicle_file_path = file_path
-        self.vehicle_status.config(text=f"✅ Selected: {os.path.basename(file_path)}", fg=self.colors['success'])
+        self.vehicle_status.config(text=f"Selected: {os.path.basename(file_path)}", fg="green")
         self.log_status(f"Selected vehicle file: {os.path.basename(file_path)}")
         
         try:
@@ -1772,14 +1390,6 @@ class VehicleLogChannelAppender:
                 json.dump(settings, f, indent=2)
         except Exception as e:
             self.log_status(f"Error auto-saving settings: {str(e)}")
-
-    def auto_load_last_settings(self):
-        """Automatically load the last saved settings if they exist"""
-        try:
-            if os.path.exists('channel_appender_settings.json'):
-                self.load_settings()
-        except Exception as e:
-            self.log_status(f"Error auto-loading settings: {str(e)}")
 
     def load_settings(self):
         """Load settings from default file"""

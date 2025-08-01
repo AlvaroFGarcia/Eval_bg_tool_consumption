@@ -81,7 +81,10 @@ class VehicleLogChannelAppender:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("Vehicle Log Channel Appender - Multi-Channel Tool")
-        self.root.geometry("1200x800")
+        
+        # Set modern styling and responsive window sizing
+        self.setup_modern_styling()
+        self.setup_responsive_window()
         
         # Data storage
         self.vehicle_file_path = None
@@ -103,304 +106,765 @@ class VehicleLogChannelAppender:
         
         self.setup_ui()
         self.load_settings()
+    
+    def setup_modern_styling(self):
+        """Setup modern color scheme and styling"""
+        # Modern color palette
+        self.colors = {
+            'primary': '#2E86AB',      # Blue
+            'secondary': '#A23B72',    # Purple  
+            'success': '#43AA8B',      # Green
+            'warning': '#F18F01',      # Orange
+            'danger': '#C73E1D',       # Red
+            'light': '#F8F9FA',        # Light gray
+            'dark': '#343A40',         # Dark gray
+            'white': '#FFFFFF',
+            'background': '#F5F5F5',   # Light background
+            'card': '#FFFFFF',         # Card background
+            'border': '#DEE2E6'        # Border color
+        }
+        
+        # Configure ttk styles for modern look
+        style = ttk.Style()
+        style.theme_use('clam')
+        
+        # Configure modern notebook style
+        style.configure('Modern.TNotebook', background=self.colors['background'])
+        style.configure('Modern.TNotebook.Tab', 
+                       padding=[20, 12], 
+                       font=('Segoe UI', 11, 'bold'))
+        
+        # Configure modern frame style
+        style.configure('Modern.TFrame', background=self.colors['card'])
+        
+        # Set root window styling
+        self.root.configure(bg=self.colors['background'])
+    
+    def setup_responsive_window(self):
+        """Setup responsive window with proper constraints"""
+        # Get screen dimensions
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        
+        # Calculate responsive window size (80% of screen, but with limits)
+        min_width, min_height = 1000, 700
+        max_width, max_height = 1600, 1200
+        
+        window_width = max(min_width, min(max_width, int(screen_width * 0.8)))
+        window_height = max(min_height, min(max_height, int(screen_height * 0.8)))
+        
+        # Center window on screen
+        x = (screen_width - window_width) // 2
+        y = (screen_height - window_height) // 2
+        
+        self.root.geometry(f"{window_width}x{window_height}+{x}+{y}")
+        self.root.minsize(min_width, min_height)
+        self.root.maxsize(max_width, max_height)
+        
+        # Allow window to be resizable
+        self.root.resizable(True, True)
+        
+        # Configure grid weight for responsive behavior
+        self.root.grid_rowconfigure(0, weight=1)
+        self.root.grid_columnconfigure(0, weight=1)
         
     def setup_ui(self):
-        """Setup the user interface with tabbed layout"""
+        """Setup the user interface with modern tabbed layout"""
         
-        # Title
-        title_label = tk.Label(self.root, text="Vehicle Log Channel Appender", 
-                              font=("Arial", 16, "bold"))
-        title_label.pack(pady=10)
+        # Create main container with padding
+        main_container = tk.Frame(self.root, bg=self.colors['background'])
+        main_container.pack(fill="both", expand=True, padx=20, pady=20)
         
-        # Create notebook for tabs
-        self.notebook = ttk.Notebook(self.root)
-        self.notebook.pack(fill="both", expand=True, padx=20, pady=10)
+        # Modern title with better styling
+        title_frame = tk.Frame(main_container, bg=self.colors['background'])
+        title_frame.pack(fill="x", pady=(0, 20))
+        
+        title_label = tk.Label(title_frame, 
+                              text="🚗 Vehicle Log Channel Appender", 
+                              font=("Segoe UI", 20, "bold"),
+                              fg=self.colors['dark'],
+                              bg=self.colors['background'])
+        title_label.pack()
+        
+        subtitle_label = tk.Label(title_frame, 
+                                 text="Multi-Channel Analysis Tool with Surface Table Interpolation", 
+                                 font=("Segoe UI", 11),
+                                 fg=self.colors['secondary'],
+                                 bg=self.colors['background'])
+        subtitle_label.pack(pady=(5, 0))
+        
+        # Create modern notebook for tabs
+        self.notebook = ttk.Notebook(main_container, style='Modern.TNotebook')
+        self.notebook.pack(fill="both", expand=True, pady=(0, 15))
         
         # Setup tabs
         self.setup_processing_tab()
         self.setup_custom_channels_tab()
         
-        # Status/Log area (outside tabs)
-        log_frame = tk.LabelFrame(self.root, text="Status Log", font=("Arial", 10, "bold"))
-        log_frame.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+        # Modern Status/Log area
+        log_frame = tk.LabelFrame(main_container, 
+                                 text="📊 Status Log", 
+                                 font=("Segoe UI", 12, "bold"),
+                                 fg=self.colors['dark'],
+                                 bg=self.colors['background'],
+                                 bd=2,
+                                 relief="groove")
+        log_frame.pack(fill="x", pady=(0, 15))
         
-        # Create scrollable text widget
-        text_frame = tk.Frame(log_frame)
-        text_frame.pack(fill="both", expand=True, padx=5, pady=5)
+        # Create scrollable text widget with modern styling
+        text_frame = tk.Frame(log_frame, bg=self.colors['card'])
+        text_frame.pack(fill="both", expand=True, padx=10, pady=10)
         
-        self.log_text = tk.Text(text_frame, height=6, wrap=tk.WORD)
+        self.log_text = tk.Text(text_frame, 
+                               height=6, 
+                               wrap=tk.WORD,
+                               font=("Segoe UI", 10),
+                               bg=self.colors['white'],
+                               fg=self.colors['dark'],
+                               bd=1,
+                               relief="solid",
+                               selectbackground=self.colors['primary'],
+                               selectforeground=self.colors['white'])
         scrollbar = tk.Scrollbar(text_frame, orient="vertical", command=self.log_text.yview)
         self.log_text.configure(yscrollcommand=scrollbar.set)
         
         self.log_text.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
         
-        # Enhanced Settings buttons
-        settings_frame = tk.Frame(self.root)
-        settings_frame.pack(fill="x", padx=20, pady=(0, 10))
+        # Modern Settings section
+        settings_frame = tk.Frame(main_container, bg=self.colors['background'])
+        settings_frame.pack(fill="x", pady=(0, 10))
         
-        # Auto-save status
-        status_frame = tk.Frame(settings_frame)
-        status_frame.pack(side="left", fill="x", expand=True)
+        # Create card-style container for settings
+        settings_card = tk.Frame(settings_frame, 
+                                bg=self.colors['card'],
+                                bd=1,
+                                relief="solid")
+        settings_card.pack(fill="x", padx=5, pady=5)
         
-        tk.Label(status_frame, text="Auto-save: ON", font=("Arial", 9), fg="green").pack(side="left", padx=5)
-        tk.Label(status_frame, text="●", font=("Arial", 12), fg="lightgreen").pack(side="left")
+        # Auto-save status with modern styling
+        status_frame = tk.Frame(settings_card, bg=self.colors['card'])
+        status_frame.pack(side="left", fill="x", expand=True, padx=15, pady=10)
         
-        # Main settings buttons
-        main_settings_frame = tk.Frame(settings_frame)
-        main_settings_frame.pack(side="right")
+        tk.Label(status_frame, 
+                text="🔄 Auto-save: ON", 
+                font=("Segoe UI", 10, "bold"), 
+                fg=self.colors['success'],
+                bg=self.colors['card']).pack(side="left", padx=5)
+        tk.Label(status_frame, 
+                text="●", 
+                font=("Segoe UI", 14), 
+                fg=self.colors['success'],
+                bg=self.colors['card']).pack(side="left")
         
-        tk.Button(main_settings_frame, text="💾 Save Settings As...", command=self.save_settings_as, 
-                 bg="lightgreen", font=("Arial", 9, "bold")).pack(side="left", padx=2)
-        tk.Button(main_settings_frame, text="📁 Load Settings From...", command=self.load_settings_from, 
-                 bg="lightblue", font=("Arial", 9, "bold")).pack(side="left", padx=2)
+        # Main settings buttons with modern styling
+        main_settings_frame = tk.Frame(settings_card, bg=self.colors['card'])
+        main_settings_frame.pack(side="right", padx=15, pady=10)
         
-        # Quick save/load section
-        quick_frame = tk.Frame(settings_frame)
-        quick_frame.pack(side="right", padx=(10, 0))
+        self.create_modern_button(main_settings_frame, 
+                                 "💾 Save Settings As...", 
+                                 self.save_settings_as, 
+                                 self.colors['success']).pack(side="left", padx=3)
+        self.create_modern_button(main_settings_frame, 
+                                 "📁 Load Settings From...", 
+                                 self.load_settings_from, 
+                                                                   self.colors['primary']).pack(side="left", padx=3)
         
-        tk.Label(quick_frame, text="Quick:", font=("Arial", 8)).pack(side="left")
+        # Modern Quick save/load section
+        quick_frame = tk.Frame(settings_card, bg=self.colors['card'])
+        quick_frame.pack(side="right", padx=(15, 15), pady=10)
+        
+        tk.Label(quick_frame, 
+                text="⚡ Quick:", 
+                font=("Segoe UI", 10, "bold"),
+                fg=self.colors['dark'],
+                bg=self.colors['card']).pack(side="left", padx=(0, 10))
         
         # Store references to quick save/load buttons for updating indicators
         self.quick_save_buttons = {}
         self.quick_load_buttons = {}
         
-        # Quick save slots (1-3)
+        # Quick save slots (1-3) with modern styling
         for i in range(1, 4):
-            btn_frame = tk.Frame(quick_frame)
-            btn_frame.pack(side="left", padx=1)
+            btn_frame = tk.Frame(quick_frame, bg=self.colors['card'])
+            btn_frame.pack(side="left", padx=3)
             
             # Check if slot has data
             slot_has_data = os.path.exists(f"quick_save_slot_{i}.json")
-            save_color = "lightgreen" if not slot_has_data else "green"
-            load_color = "lightblue" if slot_has_data else "lightgray"
+            save_color = self.colors['success'] if not slot_has_data else self.colors['warning']
+            load_color = self.colors['primary'] if slot_has_data else self.colors['light']
             
-            # Save button
-            save_btn = tk.Button(btn_frame, text=f"S{i}", command=lambda slot=i: self.quick_save_settings(slot), 
-                     bg=save_color, font=("Arial", 7), width=3, height=1)
-            save_btn.pack(side="top")
+            # Save button with modern styling
+            save_btn = self.create_mini_button(btn_frame, f"S{i}", 
+                                             lambda slot=i: self.quick_save_settings(slot), 
+                                             save_color)
+            save_btn.pack(side="top", pady=1)
             self.quick_save_buttons[i] = save_btn
             
-            # Load button  
-            load_btn = tk.Button(btn_frame, text=f"L{i}", command=lambda slot=i: self.quick_load_settings(slot), 
-                     bg=load_color, font=("Arial", 7), width=3, height=1)
-            load_btn.pack(side="top")
+            # Load button with modern styling
+            load_btn = self.create_mini_button(btn_frame, f"L{i}", 
+                                             lambda slot=i: self.quick_load_settings(slot), 
+                                             load_color)
+            load_btn.pack(side="top", pady=1)
             self.quick_load_buttons[i] = load_btn
             
             # Add tooltip effect on hover
             self.add_slot_tooltip(save_btn, load_btn, i)
         
-        # Reset button
-        tk.Button(main_settings_frame, text="🔄 Reset", command=self.reset_to_defaults, 
-                 bg="lightyellow", font=("Arial", 9)).pack(side="left", padx=2)
+        # Reset button with modern styling
+        self.create_modern_button(main_settings_frame, 
+                                 "🔄 Reset", 
+                                 self.reset_to_defaults, 
+                                 self.colors['warning']).pack(side="left", padx=3)
         
-        self.log_status("Application started. Please select a vehicle file and configure custom channels.")
+        self.log_status("🚀 Application started. Please select a vehicle file and configure custom channels.")
+
+    def create_modern_button(self, parent, text, command, bg_color, width=None, height=None):
+        """Create a modern styled button"""
+        return tk.Button(parent,
+                        text=text,
+                        command=command,
+                        bg=bg_color,
+                        fg=self.colors['white'],
+                        font=("Segoe UI", 10, "bold"),
+                        relief="flat",
+                        bd=0,
+                        padx=15,
+                        pady=8,
+                        cursor="hand2",
+                        activebackground=self.darken_color(bg_color),
+                        activeforeground=self.colors['white'],
+                        width=width,
+                        height=height)
+    
+    def create_mini_button(self, parent, text, command, bg_color):
+        """Create a small modern styled button for quick actions"""
+        return tk.Button(parent,
+                        text=text,
+                        command=command,
+                        bg=bg_color,
+                        fg=self.colors['white'],
+                        font=("Segoe UI", 8, "bold"),
+                        relief="flat",
+                        bd=0,
+                        width=3,
+                        height=1,
+                        cursor="hand2",
+                        activebackground=self.darken_color(bg_color),
+                        activeforeground=self.colors['white'])
+    
+    def darken_color(self, color):
+        """Darken a hex color by 20% for hover effects"""
+        # Simple darkening - remove the # and convert to RGB
+        if color.startswith('#'):
+            color = color[1:]
+        
+        # Convert hex to RGB
+        r = int(color[0:2], 16)
+        g = int(color[2:4], 16) 
+        b = int(color[4:6], 16)
+        
+        # Darken by 20%
+        r = int(r * 0.8)
+        g = int(g * 0.8)
+        b = int(b * 0.8)
+        
+        # Convert back to hex
+        return f"#{r:02x}{g:02x}{b:02x}"
 
     def setup_processing_tab(self):
-        """Setup the main processing tab"""
-        self.processing_frame = ttk.Frame(self.notebook)
-        self.notebook.add(self.processing_frame, text="Processing")
+        """Setup the main processing tab with modern styling"""
+        self.processing_frame = ttk.Frame(self.notebook, style='Modern.TFrame')
+        self.notebook.add(self.processing_frame, text="🔧 Processing")
         
-        # Vehicle file selection
-        file_frame = tk.LabelFrame(self.processing_frame, text="Vehicle Log File", 
-                                  font=("Arial", 12, "bold"))
-        file_frame.pack(fill="x", padx=20, pady=10)
+        # Create scrollable container for the processing tab
+        canvas = tk.Canvas(self.processing_frame, bg=self.colors['background'])
+        scrollbar = ttk.Scrollbar(self.processing_frame, orient="vertical", command=canvas.yview)
+        scrollable_frame = tk.Frame(canvas, bg=self.colors['background'])
         
-        vehicle_btn_frame = tk.Frame(file_frame)
-        vehicle_btn_frame.pack(fill="x", padx=10, pady=10)
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
         
-        self.vehicle_btn = tk.Button(vehicle_btn_frame, text="Select Vehicle File (MDF/MF4/DAT/CSV)", 
-                                    command=self.select_vehicle_file, bg="lightgreen")
-        self.vehicle_btn.pack(side="left")
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
         
-        self.vehicle_status = tk.Label(vehicle_btn_frame, text="No vehicle file selected", fg="red")
-        self.vehicle_status.pack(side="left", padx=10)
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
         
-        # Processing options
-        options_frame = tk.LabelFrame(self.processing_frame, text="Processing Options", 
-                                     font=("Arial", 12, "bold"))
-        options_frame.pack(fill="x", padx=20, pady=10)
+        # Vehicle file selection with modern card design
+        file_card = tk.LabelFrame(scrollable_frame, 
+                                 text="📁 Vehicle Log File", 
+                                 font=("Segoe UI", 14, "bold"),
+                                 fg=self.colors['dark'],
+                                 bg=self.colors['card'],
+                                 bd=2,
+                                 relief="groove")
+        file_card.pack(fill="x", padx=25, pady=15)
         
-        # Output format selection
-        format_frame = tk.Frame(options_frame)
-        format_frame.pack(fill="x", padx=10, pady=5)
+        vehicle_btn_frame = tk.Frame(file_card, bg=self.colors['card'])
+        vehicle_btn_frame.pack(fill="x", padx=20, pady=20)
         
-        tk.Label(format_frame, text="Output Format:", font=("Arial", 10, "bold")).pack(anchor="w")
+        # Modern file selection button
+        self.vehicle_btn = self.create_modern_button(vehicle_btn_frame, 
+                                                    "📂 Select Vehicle File (MDF/MF4/DAT/CSV)", 
+                                                    self.select_vehicle_file, 
+                                                    self.colors['primary'],
+                                                    width=35)
+        self.vehicle_btn.pack(anchor="w")
+        
+        # Status label with modern styling
+        status_frame = tk.Frame(vehicle_btn_frame, bg=self.colors['card'])
+        status_frame.pack(fill="x", pady=(15, 0))
+        
+        self.vehicle_status = tk.Label(status_frame, 
+                                      text="❌ No vehicle file selected", 
+                                      fg=self.colors['danger'],
+                                      bg=self.colors['card'],
+                                      font=("Segoe UI", 11))
+        self.vehicle_status.pack(anchor="w")
+        
+        # Modern Processing options
+        options_card = tk.LabelFrame(scrollable_frame, 
+                                   text="⚙️ Processing Options", 
+                                   font=("Segoe UI", 14, "bold"),
+                                   fg=self.colors['dark'],
+                                   bg=self.colors['card'],
+                                   bd=2,
+                                   relief="groove")
+        options_card.pack(fill="x", padx=25, pady=15)
+        
+        # Output format selection with modern styling
+        format_container = tk.Frame(options_card, bg=self.colors['card'])
+        format_container.pack(fill="x", padx=20, pady=20)
+        
+        format_title = tk.Label(format_container, 
+                               text="📊 Output Format:", 
+                               font=("Segoe UI", 12, "bold"),
+                               fg=self.colors['dark'],
+                               bg=self.colors['card'])
+        format_title.pack(anchor="w", pady=(0, 10))
         
         self.output_format = tk.StringVar(value="mf4")
-        tk.Radiobutton(format_frame, text="MF4 (Recommended for calculated channels)", 
-                      variable=self.output_format, value="mf4").pack(anchor="w", padx=20)
-        tk.Radiobutton(format_frame, text="CSV (For data analysis)", 
-                      variable=self.output_format, value="csv").pack(anchor="w", padx=20)
         
-        # Processing section
-        process_frame = tk.LabelFrame(self.processing_frame, text="Process Channels", 
-                                     font=("Arial", 12, "bold"))
-        process_frame.pack(fill="x", padx=20, pady=10)
+        # Modern radio buttons
+        format_frame = tk.Frame(format_container, bg=self.colors['card'])
+        format_frame.pack(fill="x", padx=20)
         
-        info_frame = tk.Frame(process_frame)
-        info_frame.pack(fill="x", padx=10, pady=5)
+        mf4_radio = tk.Radiobutton(format_frame, 
+                                  text="🔧 MF4 (Recommended for calculated channels)", 
+                                  variable=self.output_format, 
+                                  value="mf4",
+                                  font=("Segoe UI", 11),
+                                  bg=self.colors['card'],
+                                  fg=self.colors['dark'],
+                                  selectcolor=self.colors['primary'],
+                                  activebackground=self.colors['card'])
+        mf4_radio.pack(anchor="w", pady=3)
         
-        info_text = ("Configure custom channels in the 'Custom Channels' tab, then process them here.\n"
-                    "The tool will create calculated channels based on surface table interpolation.")
-        tk.Label(info_frame, text=info_text, font=("Arial", 9), fg="blue", justify="left").pack(anchor="w")
+        csv_radio = tk.Radiobutton(format_frame, 
+                                  text="📈 CSV (For data analysis)", 
+                                  variable=self.output_format, 
+                                  value="csv",
+                                  font=("Segoe UI", 11),
+                                  bg=self.colors['card'],
+                                  fg=self.colors['dark'],
+                                  selectcolor=self.colors['primary'],
+                                  activebackground=self.colors['card'])
+        csv_radio.pack(anchor="w", pady=3)
         
-        process_btn_frame = tk.Frame(process_frame)
-        process_btn_frame.pack(fill="x", padx=10, pady=10)
+        # Modern Processing section
+        process_card = tk.LabelFrame(scrollable_frame, 
+                                   text="🚀 Process Channels", 
+                                   font=("Segoe UI", 14, "bold"),
+                                   fg=self.colors['dark'],
+                                   bg=self.colors['card'],
+                                   bd=2,
+                                   relief="groove")
+        process_card.pack(fill="x", padx=25, pady=15)
         
-        self.process_btn = tk.Button(process_btn_frame, text="Process All Custom Channels", 
-                                    command=self.process_all_channels, bg="orange", 
-                                    font=("Arial", 12, "bold"))
-        self.process_btn.pack()
+        info_container = tk.Frame(process_card, bg=self.colors['card'])
+        info_container.pack(fill="x", padx=20, pady=20)
+        
+        # Modern info section with icon
+        info_text = ("💡 Configure custom channels in the 'Custom Channels' tab, then process them here.\n"
+                    "🔄 The tool will create calculated channels based on surface table interpolation.")
+        info_label = tk.Label(info_container, 
+                             text=info_text, 
+                             font=("Segoe UI", 11), 
+                             fg=self.colors['primary'],
+                             bg=self.colors['card'],
+                             justify="left",
+                             wraplength=600)
+        info_label.pack(anchor="w", pady=(0, 20))
+        
+        # Modern process button
+        process_btn_frame = tk.Frame(info_container, bg=self.colors['card'])
+        process_btn_frame.pack(fill="x")
+        
+        self.process_btn = self.create_modern_button(process_btn_frame, 
+                                                    "🚀 Process All Custom Channels", 
+                                                    self.process_all_channels, 
+                                                    self.colors['warning'],
+                                                    width=30,
+                                                    height=2)
+        self.process_btn.pack(pady=10)
 
     def setup_custom_channels_tab(self):
-        """Setup the custom channels tab with enhanced search and filter functionality"""
-        self.custom_channels_frame = ttk.Frame(self.notebook)
-        self.notebook.add(self.custom_channels_frame, text="Custom Channels")
+        """Setup the custom channels tab with modern design and enhanced functionality"""
+        self.custom_channels_frame = ttk.Frame(self.notebook, style='Modern.TFrame')
+        self.notebook.add(self.custom_channels_frame, text="⚙️ Custom Channels")
         
-        # Title
-        title_label = tk.Label(self.custom_channels_frame, text="Custom Channel Management", 
-                              font=("Arial", 14, "bold"))
-        title_label.pack(pady=10)
+        # Create scrollable container for the custom channels tab
+        canvas2 = tk.Canvas(self.custom_channels_frame, bg=self.colors['background'])
+        scrollbar2 = ttk.Scrollbar(self.custom_channels_frame, orient="vertical", command=canvas2.yview)
+        scrollable_frame2 = tk.Frame(canvas2, bg=self.colors['background'])
         
-        # Add new channel section
-        add_frame = tk.LabelFrame(self.custom_channels_frame, text="Add New Custom Channel", 
-                                 font=("Arial", 12, "bold"))
-        add_frame.pack(fill="x", padx=20, pady=10)
+        scrollable_frame2.bind(
+            "<Configure>",
+            lambda e: canvas2.configure(scrollregion=canvas2.bbox("all"))
+        )
         
-        # Channel name
-        name_frame = tk.Frame(add_frame)
-        name_frame.pack(fill="x", padx=10, pady=5)
-        tk.Label(name_frame, text="Channel Name:", width=18, anchor="w").pack(side="left")
-        self.new_custom_name = tk.Entry(name_frame, width=30)
-        self.new_custom_name.pack(side="left", padx=5)
+        canvas2.create_window((0, 0), window=scrollable_frame2, anchor="nw")
+        canvas2.configure(yscrollcommand=scrollbar2.set)
         
-        # CSV Surface Table file
-        csv_frame = tk.Frame(add_frame)
-        csv_frame.pack(fill="x", padx=10, pady=5)
-        tk.Label(csv_frame, text="Surface Table CSV:", width=18, anchor="w").pack(side="left")
-        self.new_custom_csv = tk.Entry(csv_frame, width=40)
-        self.new_custom_csv.pack(side="left", padx=5)
-        tk.Button(csv_frame, text="Browse", command=self.browse_custom_csv).pack(side="left", padx=5)
+        canvas2.pack(side="left", fill="both", expand=True)
+        scrollbar2.pack(side="right", fill="y")
         
-        # CSV column configuration section
-        csv_config_frame = tk.LabelFrame(add_frame, text="CSV Surface Table Configuration")
-        csv_config_frame.pack(fill="x", padx=10, pady=5)
+        # Modern title section
+        title_container = tk.Frame(scrollable_frame2, bg=self.colors['background'])
+        title_container.pack(fill="x", padx=25, pady=(15, 0))
         
-        # X axis column (e.g., RPM)
-        x_col_frame = tk.Frame(csv_config_frame)
-        x_col_frame.pack(fill="x", padx=5, pady=2)
-        tk.Label(x_col_frame, text="X-axis Column (e.g., RPM):", width=25, anchor="w").pack(side="left")
-        self.new_custom_x_col = AutocompleteCombobox(x_col_frame, width=25)
+        title_label = tk.Label(title_container, 
+                              text="⚙️ Custom Channel Management", 
+                              font=("Segoe UI", 18, "bold"),
+                              fg=self.colors['dark'],
+                              bg=self.colors['background'])
+        title_label.pack()
+        
+        subtitle_label = tk.Label(title_container,
+                                 text="Create and manage custom calculated channels with surface table interpolation",
+                                 font=("Segoe UI", 11),
+                                 fg=self.colors['secondary'],
+                                 bg=self.colors['background'])
+        subtitle_label.pack(pady=(5, 15))
+        
+        # Modern Add new channel section
+        add_card = tk.LabelFrame(scrollable_frame2, 
+                                text="➕ Add New Custom Channel", 
+                                font=("Segoe UI", 14, "bold"),
+                                fg=self.colors['dark'],
+                                bg=self.colors['card'],
+                                bd=2,
+                                relief="groove")
+        add_card.pack(fill="x", padx=25, pady=15)
+        
+        # Main form container
+        form_container = tk.Frame(add_card, bg=self.colors['card'])
+        form_container.pack(fill="x", padx=20, pady=20)
+        
+        # Modern Channel name field
+        name_frame = tk.Frame(form_container, bg=self.colors['card'])
+        name_frame.pack(fill="x", pady=8)
+        tk.Label(name_frame, 
+                text="📝 Channel Name:", 
+                width=20, 
+                anchor="w",
+                font=("Segoe UI", 11, "bold"),
+                fg=self.colors['dark'],
+                bg=self.colors['card']).pack(side="left")
+        self.new_custom_name = tk.Entry(name_frame, 
+                                       width=30,
+                                       font=("Segoe UI", 11),
+                                       bd=1,
+                                       relief="solid")
+        self.new_custom_name.pack(side="left", padx=10)
+        
+        # Modern CSV Surface Table file field
+        csv_frame = tk.Frame(form_container, bg=self.colors['card'])
+        csv_frame.pack(fill="x", pady=8)
+        tk.Label(csv_frame, 
+                text="📊 Surface Table CSV:", 
+                width=20, 
+                anchor="w",
+                font=("Segoe UI", 11, "bold"),
+                fg=self.colors['dark'],
+                bg=self.colors['card']).pack(side="left")
+        self.new_custom_csv = tk.Entry(csv_frame, 
+                                      width=35,
+                                      font=("Segoe UI", 11),
+                                      bd=1,
+                                      relief="solid")
+        self.new_custom_csv.pack(side="left", padx=10)
+        browse_btn = self.create_modern_button(csv_frame, 
+                                              "📁 Browse", 
+                                              self.browse_custom_csv, 
+                                              self.colors['secondary'])
+        browse_btn.pack(side="left", padx=5)
+        
+        # Modern CSV column configuration section
+        csv_config_card = tk.LabelFrame(form_container, 
+                                       text="📋 CSV Surface Table Configuration",
+                                       font=("Segoe UI", 12, "bold"),
+                                       fg=self.colors['dark'],
+                                       bg=self.colors['card'],
+                                       bd=1,
+                                       relief="solid")
+        csv_config_card.pack(fill="x", pady=15)
+        
+        csv_config_inner = tk.Frame(csv_config_card, bg=self.colors['card'])
+        csv_config_inner.pack(fill="x", padx=15, pady=15)
+        
+        # Modern X axis column field
+        x_col_frame = tk.Frame(csv_config_inner, bg=self.colors['card'])
+        x_col_frame.pack(fill="x", pady=5)
+        tk.Label(x_col_frame, 
+                text="📊 X-axis Column (e.g., RPM):", 
+                width=28, 
+                anchor="w",
+                font=("Segoe UI", 10),
+                fg=self.colors['dark'],
+                bg=self.colors['card']).pack(side="left")
+        self.new_custom_x_col = AutocompleteCombobox(x_col_frame, 
+                                                    width=25,
+                                                    font=("Segoe UI", 10))
         self.new_custom_x_col.pack(side="left", padx=5)
         
-        # Y axis column (e.g., ETASP)
-        y_col_frame = tk.Frame(csv_config_frame)
-        y_col_frame.pack(fill="x", padx=5, pady=2)
-        tk.Label(y_col_frame, text="Y-axis Column (e.g., ETASP):", width=25, anchor="w").pack(side="left")
-        self.new_custom_y_col = AutocompleteCombobox(y_col_frame, width=25)
+        # Modern Y axis column field
+        y_col_frame = tk.Frame(csv_config_inner, bg=self.colors['card'])
+        y_col_frame.pack(fill="x", pady=5)
+        tk.Label(y_col_frame, 
+                text="📈 Y-axis Column (e.g., ETASP):", 
+                width=28, 
+                anchor="w",
+                font=("Segoe UI", 10),
+                fg=self.colors['dark'],
+                bg=self.colors['card']).pack(side="left")
+        self.new_custom_y_col = AutocompleteCombobox(y_col_frame, 
+                                                    width=25,
+                                                    font=("Segoe UI", 10))
         self.new_custom_y_col.pack(side="left", padx=5)
         
-        # Z axis column (values)
-        z_col_frame = tk.Frame(csv_config_frame)
-        z_col_frame.pack(fill="x", padx=5, pady=2)
-        tk.Label(z_col_frame, text="Z-axis Column (Values):", width=25, anchor="w").pack(side="left")
-        self.new_custom_z_col = AutocompleteCombobox(z_col_frame, width=25)
+        # Modern Z axis column field
+        z_col_frame = tk.Frame(csv_config_inner, bg=self.colors['card'])
+        z_col_frame.pack(fill="x", pady=5)
+        tk.Label(z_col_frame, 
+                text="📋 Z-axis Column (Values):", 
+                width=28, 
+                anchor="w",
+                font=("Segoe UI", 10),
+                fg=self.colors['dark'],
+                bg=self.colors['card']).pack(side="left")
+        self.new_custom_z_col = AutocompleteCombobox(z_col_frame, 
+                                                    width=25,
+                                                    font=("Segoe UI", 10))
         self.new_custom_z_col.pack(side="left", padx=5)
         
-        # Vehicle log channel selection section
-        veh_config_frame = tk.LabelFrame(add_frame, text="Vehicle Log Channel Selection")
-        veh_config_frame.pack(fill="x", padx=10, pady=5)
+        # Modern Vehicle log channel selection section
+        veh_config_card = tk.LabelFrame(form_container, 
+                                       text="🚗 Vehicle Log Channel Selection",
+                                       font=("Segoe UI", 12, "bold"),
+                                       fg=self.colors['dark'],
+                                       bg=self.colors['card'],
+                                       bd=1,
+                                       relief="solid")
+        veh_config_card.pack(fill="x", pady=15)
         
-        # Vehicle X channel
-        veh_x_frame = tk.Frame(veh_config_frame)
-        veh_x_frame.pack(fill="x", padx=5, pady=2)
-        tk.Label(veh_x_frame, text="Vehicle X Channel:", width=18, anchor="w").pack(side="left")
-        self.new_custom_veh_x = AutocompleteCombobox(veh_x_frame, width=30)
+        veh_config_inner = tk.Frame(veh_config_card, bg=self.colors['card'])
+        veh_config_inner.pack(fill="x", padx=15, pady=15)
+        
+        # Modern Vehicle X channel field
+        veh_x_frame = tk.Frame(veh_config_inner, bg=self.colors['card'])
+        veh_x_frame.pack(fill="x", pady=5)
+        tk.Label(veh_x_frame, 
+                text="🔧 Vehicle X Channel:", 
+                width=20, 
+                anchor="w",
+                font=("Segoe UI", 10),
+                fg=self.colors['dark'],
+                bg=self.colors['card']).pack(side="left")
+        self.new_custom_veh_x = AutocompleteCombobox(veh_x_frame, 
+                                                    width=30,
+                                                    font=("Segoe UI", 10))
         self.new_custom_veh_x.pack(side="left", padx=5)
         
-        # Vehicle Y channel
-        veh_y_frame = tk.Frame(veh_config_frame)
-        veh_y_frame.pack(fill="x", padx=5, pady=2)
-        tk.Label(veh_y_frame, text="Vehicle Y Channel:", width=18, anchor="w").pack(side="left")
-        self.new_custom_veh_y = AutocompleteCombobox(veh_y_frame, width=30)
+        # Modern Vehicle Y channel field
+        veh_y_frame = tk.Frame(veh_config_inner, bg=self.colors['card'])
+        veh_y_frame.pack(fill="x", pady=5)
+        tk.Label(veh_y_frame, 
+                text="📊 Vehicle Y Channel:", 
+                width=20, 
+                anchor="w",
+                font=("Segoe UI", 10),
+                fg=self.colors['dark'],
+                bg=self.colors['card']).pack(side="left")
+        self.new_custom_veh_y = AutocompleteCombobox(veh_y_frame, 
+                                                    width=30,
+                                                    font=("Segoe UI", 10))
         self.new_custom_veh_y.pack(side="left", padx=5)
         
-        # Units and comment
-        meta_frame = tk.Frame(add_frame)
-        meta_frame.pack(fill="x", padx=10, pady=5)
+        # Modern Units and comment section
+        meta_container = tk.Frame(form_container, bg=self.colors['card'])
+        meta_container.pack(fill="x", pady=15)
         
-        units_frame = tk.Frame(meta_frame)
+        meta_frame = tk.Frame(meta_container, bg=self.colors['card'])
+        meta_frame.pack(fill="x")
+        
+        # Units field
+        units_frame = tk.Frame(meta_frame, bg=self.colors['card'])
         units_frame.pack(side="left", fill="x", expand=True)
-        tk.Label(units_frame, text="Units:", width=8, anchor="w").pack(side="left")
-        self.new_custom_units = tk.Entry(units_frame, width=15)
+        tk.Label(units_frame, 
+                text="📏 Units:", 
+                width=10, 
+                anchor="w",
+                font=("Segoe UI", 11, "bold"),
+                fg=self.colors['dark'],
+                bg=self.colors['card']).pack(side="left")
+        self.new_custom_units = tk.Entry(units_frame, 
+                                        width=15,
+                                        font=("Segoe UI", 11),
+                                        bd=1,
+                                        relief="solid")
         self.new_custom_units.pack(side="left", padx=5)
         
-        comment_frame = tk.Frame(meta_frame)
+        # Comment field
+        comment_frame = tk.Frame(meta_frame, bg=self.colors['card'])
         comment_frame.pack(side="right", fill="x", expand=True)
-        tk.Label(comment_frame, text="Comment:", width=10, anchor="w").pack(side="left")
-        self.new_custom_comment = tk.Entry(comment_frame, width=25)
+        tk.Label(comment_frame, 
+                text="💬 Comment:", 
+                width=12, 
+                anchor="w",
+                font=("Segoe UI", 11, "bold"),
+                fg=self.colors['dark'],
+                bg=self.colors['card']).pack(side="left")
+        self.new_custom_comment = tk.Entry(comment_frame, 
+                                          width=25,
+                                          font=("Segoe UI", 11),
+                                          bd=1,
+                                          relief="solid")
         self.new_custom_comment.pack(side="left", padx=5)
         
-        # Add button and preserve settings checkbox
-        add_btn_frame = tk.Frame(add_frame)
-        add_btn_frame.pack(fill="x", padx=10, pady=10)
+        # Modern Add button and preserve settings section
+        add_btn_container = tk.Frame(form_container, bg=self.colors['card'])
+        add_btn_container.pack(fill="x", pady=20)
+        
+        # Checkbox with modern styling
+        checkbox_frame = tk.Frame(add_btn_container, bg=self.colors['card'])
+        checkbox_frame.pack(side="left")
         
         self.preserve_settings = tk.BooleanVar(value=True)
-        tk.Checkbutton(add_btn_frame, text="Keep settings after adding channel", 
-                      variable=self.preserve_settings, font=("Arial", 9)).pack(side="left")
+        preserve_cb = tk.Checkbutton(checkbox_frame, 
+                                    text="💾 Keep settings after adding channel", 
+                                    variable=self.preserve_settings, 
+                                    font=("Segoe UI", 10),
+                                    bg=self.colors['card'],
+                                    fg=self.colors['dark'],
+                                    selectcolor=self.colors['success'],
+                                    activebackground=self.colors['card'])
+        preserve_cb.pack(side="left")
         
-        tk.Button(add_btn_frame, text="Add Custom Channel", command=self.add_custom_channel,
-                 bg="lightgreen", font=("Arial", 10, "bold")).pack(side="right")
+        # Modern add button
+        add_btn_frame = tk.Frame(add_btn_container, bg=self.colors['card'])
+        add_btn_frame.pack(side="right")
         
-        # Custom channels list with search and filters
-        list_frame = tk.LabelFrame(self.custom_channels_frame, text="Configured Custom Channels", 
-                                  font=("Arial", 12, "bold"))
-        list_frame.pack(fill="both", expand=True, padx=20, pady=10)
+        add_btn = self.create_modern_button(add_btn_frame, 
+                                           "➕ Add Custom Channel", 
+                                           self.add_custom_channel,
+                                           self.colors['success'],
+                                           width=20)
+        add_btn.pack()
         
-        # Search and filter section
-        search_filter_frame = tk.Frame(list_frame)
-        search_filter_frame.pack(fill="x", padx=5, pady=5)
+        # Modern Custom channels list with search and filters
+        list_card = tk.LabelFrame(scrollable_frame2, 
+                                 text="📋 Configured Custom Channels", 
+                                 font=("Segoe UI", 14, "bold"),
+                                 fg=self.colors['dark'],
+                                 bg=self.colors['card'],
+                                 bd=2,
+                                 relief="groove")
+        list_card.pack(fill="both", expand=True, padx=25, pady=15)
         
-        # Search functionality
-        search_frame = tk.Frame(search_filter_frame)
+        # Modern Search and filter section
+        search_filter_container = tk.Frame(list_card, bg=self.colors['card'])
+        search_filter_container.pack(fill="x", padx=15, pady=15)
+        
+        # Modern Search functionality
+        search_frame = tk.Frame(search_filter_container, bg=self.colors['card'])
         search_frame.pack(side="left", fill="x", expand=True)
         
-        tk.Label(search_frame, text="Search:", font=("Arial", 10, "bold")).pack(side="left", padx=5)
-        search_entry = tk.Entry(search_frame, textvariable=self.search_var, width=30)
+        tk.Label(search_frame, 
+                text="🔍 Search:", 
+                font=("Segoe UI", 11, "bold"),
+                fg=self.colors['dark'],
+                bg=self.colors['card']).pack(side="left", padx=5)
+        search_entry = tk.Entry(search_frame, 
+                               textvariable=self.search_var, 
+                               width=30,
+                               font=("Segoe UI", 11),
+                               bd=1,
+                               relief="solid")
         search_entry.pack(side="left", padx=5)
         search_entry.bind('<KeyRelease>', self.on_search_change)
         
-        tk.Button(search_frame, text="Clear", command=self.clear_search, 
-                 bg="lightgray").pack(side="left", padx=5)
+        clear_search_btn = self.create_modern_button(search_frame, 
+                                                    "✖️ Clear", 
+                                                    self.clear_search, 
+                                                    self.colors['danger'])
+        clear_search_btn.pack(side="left", padx=5)
         
-        # Filter controls
-        filter_frame = tk.Frame(search_filter_frame)
+        # Modern Filter controls
+        filter_frame = tk.Frame(search_filter_container, bg=self.colors['card'])
         filter_frame.pack(side="right")
         
-        tk.Label(filter_frame, text="Filters:", font=("Arial", 10, "bold")).pack(side="left", padx=5)
-        tk.Button(filter_frame, text="Setup Filters", command=self.setup_filters, 
-                 bg="lightblue").pack(side="left", padx=2)
-        tk.Button(filter_frame, text="Clear Filters", command=self.clear_filters, 
-                 bg="lightgray").pack(side="left", padx=2)
+        tk.Label(filter_frame, 
+                text="🎛️ Filters:", 
+                font=("Segoe UI", 11, "bold"),
+                fg=self.colors['dark'],
+                bg=self.colors['card']).pack(side="left", padx=5)
+        setup_filters_btn = self.create_modern_button(filter_frame, 
+                                                     "⚙️ Setup", 
+                                                     self.setup_filters, 
+                                                     self.colors['primary'])
+        setup_filters_btn.pack(side="left", padx=2)
+        clear_filters_btn = self.create_modern_button(filter_frame, 
+                                                     "🧹 Clear", 
+                                                     self.clear_filters, 
+                                                     self.colors['secondary'])
+        clear_filters_btn.pack(side="left", padx=2)
         
-        # Create main container for treeview and scrollbar with proper alignment
-        tree_container = tk.Frame(list_frame)
-        tree_container.pack(fill="both", expand=True, padx=5, pady=5)
+        # Modern table container with proper scrollbars
+        tree_container = tk.Frame(list_card, bg=self.colors['card'])
+        tree_container.pack(fill="both", expand=True, padx=15, pady=10)
         
         # Configure grid for proper scrollbar alignment
         tree_container.grid_rowconfigure(0, weight=1)
         tree_container.grid_columnconfigure(0, weight=1)
         
-        # Create treeview for custom channels
+        # Create modern treeview for custom channels
         columns = ("Name", "CSV File", "X Col", "Y Col", "Z Col", "Veh X", "Veh Y", "Units")
-        self.custom_channels_tree = ttk.Treeview(tree_container, columns=columns, show="headings", height=8)
+        style = ttk.Style()
+        style.configure("Custom.Treeview", 
+                       background=self.colors['white'],
+                       foreground=self.colors['dark'],
+                       fieldbackground=self.colors['white'],
+                       font=("Segoe UI", 10))
+        style.configure("Custom.Treeview.Heading", 
+                       background=self.colors['primary'],
+                       foreground=self.colors['white'],
+                       font=("Segoe UI", 10, "bold"))
+        
+        self.custom_channels_tree = ttk.Treeview(tree_container, 
+                                               columns=columns, 
+                                               show="headings", 
+                                               height=10,
+                                               style="Custom.Treeview")
         
         for col in columns:
             self.custom_channels_tree.heading(col, text=col)
-            self.custom_channels_tree.column(col, width=120)
+            self.custom_channels_tree.column(col, width=130, minwidth=100)
         
-        # Fixed scrollbar positioning - properly aligned with the table
+        # Modern scrollbars
         v_scrollbar = ttk.Scrollbar(tree_container, orient="vertical", command=self.custom_channels_tree.yview)
         h_scrollbar = ttk.Scrollbar(tree_container, orient="horizontal", command=self.custom_channels_tree.xview)
         
@@ -411,13 +875,27 @@ class VehicleLogChannelAppender:
         v_scrollbar.grid(row=0, column=1, sticky="ns")
         h_scrollbar.grid(row=1, column=0, sticky="ew")
         
-        # Management buttons
-        btn_frame = tk.Frame(list_frame)
-        btn_frame.pack(fill="x", padx=5, pady=5)
+        # Modern Management buttons
+        btn_container = tk.Frame(list_card, bg=self.colors['card'])
+        btn_container.pack(fill="x", padx=15, pady=10)
         
-        tk.Button(btn_frame, text="Edit Selected", command=self.edit_custom_channel).pack(side="left", padx=5)
-        tk.Button(btn_frame, text="Delete Selected", command=self.delete_custom_channel).pack(side="left", padx=5)
-        tk.Button(btn_frame, text="Clear All", command=self.clear_custom_channels).pack(side="left", padx=5)
+        edit_btn = self.create_modern_button(btn_container, 
+                                           "✏️ Edit Selected", 
+                                           self.edit_custom_channel, 
+                                           self.colors['primary'])
+        edit_btn.pack(side="left", padx=5)
+        
+        delete_btn = self.create_modern_button(btn_container, 
+                                             "🗑️ Delete Selected", 
+                                             self.delete_custom_channel, 
+                                             self.colors['danger'])
+        delete_btn.pack(side="left", padx=5)
+        
+        clear_all_btn = self.create_modern_button(btn_container, 
+                                                 "🧹 Clear All", 
+                                                 self.clear_custom_channels, 
+                                                 self.colors['warning'])
+        clear_all_btn.pack(side="left", padx=5)
         
         # Initialize filter variables
         for col in columns:

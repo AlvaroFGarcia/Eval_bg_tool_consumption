@@ -191,9 +191,10 @@ class VehicleLogChannelAppenderModern:
     
     def setup_sidebar(self):
         """Create modern sidebar with navigation and settings."""
-        self.sidebar_frame = ctk.CTkFrame(self.root, width=300, corner_radius=0)
+        self.sidebar_frame = ctk.CTkFrame(self.root, width=280, corner_radius=0)
         self.sidebar_frame.grid(row=0, column=0, sticky="nsew")
         self.sidebar_frame.grid_rowconfigure(4, weight=1)
+        self.sidebar_frame.grid_propagate(False)  # Prevent frame from shrinking
         
         # App title in sidebar
         self.logo_label = ctk.CTkLabel(
@@ -277,7 +278,11 @@ class VehicleLogChannelAppenderModern:
         )
         quick_label.pack(pady=(10, 5))
         
-        # Quick save/load buttons
+        # Initialize slot names storage
+        self.slot_names = {1: "Slot 1", 2: "Slot 2", 3: "Slot 3"}
+        self.slot_name_entries = {}
+        
+        # Quick save/load buttons with names
         for i in range(1, 4):
             slot_frame = ctk.CTkFrame(quick_frame)
             slot_frame.pack(fill="x", pady=2)
@@ -302,12 +307,29 @@ class VehicleLogChannelAppenderModern:
             )
             load_btn.pack(side="left", padx=5, pady=5)
             
-            slot_label = ctk.CTkLabel(
+            # Editable slot name entry
+            name_entry = ctk.CTkEntry(
                 slot_frame,
-                text=f"Slot {i}",
-                font=ctk.CTkFont(size=10)
+                width=120,
+                height=25,
+                font=ctk.CTkFont(size=9),
+                placeholder_text=f"Slot {i}"
             )
-            slot_label.pack(side="left", padx=(10, 0), pady=5)
+            name_entry.pack(side="left", padx=(10, 5), pady=5)
+            name_entry.insert(0, self.slot_names[i])
+            name_entry.bind('<KeyRelease>', lambda e, slot=i: self.update_slot_name(slot, e))
+            self.slot_name_entries[i] = name_entry
+            
+            # Rename button
+            rename_btn = ctk.CTkButton(
+                slot_frame,
+                text="✏️",
+                command=lambda slot=i: self.rename_slot_dialog(slot),
+                width=25,
+                height=25,
+                font=ctk.CTkFont(size=8)
+            )
+            rename_btn.pack(side="right", padx=5, pady=5)
         
         # Main settings buttons
         self.save_settings_btn = ctk.CTkButton(
@@ -332,12 +354,12 @@ class VehicleLogChannelAppenderModern:
         """Setup the main content area with tabs."""
         # Main content frame
         self.main_frame = ctk.CTkFrame(self.root)
-        self.main_frame.grid(row=0, column=1, sticky="nsew", padx=(0, 20), pady=20)
+        self.main_frame.grid(row=0, column=1, sticky="nsew", padx=(10, 20), pady=20)
         self.root.grid_columnconfigure(1, weight=1)
         
         # Create tabview
         self.tabview = ctk.CTkTabview(self.main_frame)
-        self.tabview.pack(fill="both", expand=True, padx=20, pady=20)
+        self.tabview.pack(fill="both", expand=True, padx=10, pady=10)
         
         # Add tabs
         self.tabview.add("🔧 Processing")
@@ -632,13 +654,55 @@ class VehicleLogChannelAppenderModern:
         )
         self.setup_filters_btn.pack(side="right", padx=5)
         
-        # Table display (using textbox for now, but with proper formatting)
-        self.channels_display = ctk.CTkTextbox(
-            table_frame,
-            height=300,
-            font=ctk.CTkFont(family="Consolas", size=10)
-        )
-        self.channels_display.pack(fill="both", expand=True, padx=20, pady=(0, 15))
+        # Create proper table display using treeview
+        # Configure treeview style
+        import tkinter.ttk as ttk
+        style = ttk.Style()
+        style.configure("Modern.Treeview", 
+                       background="#212121",
+                       foreground="white",
+                       fieldbackground="#212121",
+                       font=("Segoe UI", 10))
+        style.configure("Modern.Treeview.Heading", 
+                       background="#1f538d",
+                       foreground="white",
+                       font=("Segoe UI", 10, "bold"))
+        
+        # Table container with proper scrollbars
+        tree_container = ctk.CTkFrame(table_frame)
+        tree_container.pack(fill="both", expand=True, padx=20, pady=(0, 15))
+        
+        # Configure grid for proper scrollbar alignment
+        tree_container.grid_rowconfigure(0, weight=1)
+        tree_container.grid_columnconfigure(0, weight=1)
+        
+        # Create treeview for custom channels
+        columns = ("Name", "CSV File", "X Col", "Y Col", "Z Col", "Veh X", "Veh Y", "Units", "Comment")
+        
+        self.channels_tree = ttk.Treeview(tree_container, 
+                                         columns=columns, 
+                                         show="headings", 
+                                         height=12,
+                                         style="Modern.Treeview")
+        
+        # Configure columns
+        column_widths = {"Name": 120, "CSV File": 150, "X Col": 80, "Y Col": 80, "Z Col": 80, 
+                        "Veh X": 120, "Veh Y": 120, "Units": 60, "Comment": 150}
+        
+        for col in columns:
+            self.channels_tree.heading(col, text=col)
+            self.channels_tree.column(col, width=column_widths.get(col, 100), minwidth=60)
+        
+        # Scrollbars
+        v_scrollbar = ttk.Scrollbar(tree_container, orient="vertical", command=self.channels_tree.yview)
+        h_scrollbar = ttk.Scrollbar(tree_container, orient="horizontal", command=self.channels_tree.xview)
+        
+        self.channels_tree.configure(yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
+        
+        # Grid layout for proper alignment
+        self.channels_tree.grid(row=0, column=0, sticky="nsew")
+        v_scrollbar.grid(row=0, column=1, sticky="ns")
+        h_scrollbar.grid(row=1, column=0, sticky="ew")
         
         # Table management buttons
         controls_frame = ctk.CTkFrame(table_frame)
@@ -661,6 +725,15 @@ class VehicleLogChannelAppenderModern:
             height=30
         )
         self.delete_channel_btn.pack(side="left", padx=5)
+        
+        self.duplicate_channel_btn = ctk.CTkButton(
+            controls_frame,
+            text="📋 Duplicate",
+            command=self.duplicate_selected_channel,
+            width=100,
+            height=30
+        )
+        self.duplicate_channel_btn.pack(side="left", padx=5)
         
         self.clear_all_btn = ctk.CTkButton(
             controls_frame,
@@ -908,29 +981,24 @@ class VehicleLogChannelAppenderModern:
     
     def update_channels_display(self):
         """Update the channels display with current channels."""
-        self.channels_display.delete("1.0", "end")
+        # Clear existing items
+        for item in self.channels_tree.get_children():
+            self.channels_tree.delete(item)
         
-        if not self.custom_channels:
-            self.channels_display.insert("1.0", "No custom channels configured.\n\nAdd channels using the form above.")
-            return
-        
-        display_text = "📊 CONFIGURED CUSTOM CHANNELS\n"
-        display_text += "=" * 80 + "\n\n"
-        
-        for i, channel in enumerate(self.custom_channels, 1):
-            display_text += f"{i:2d}. 📈 {channel['name']}\n"
-            display_text += f"     📁 CSV File: {os.path.basename(channel['csv_file'])}\n"
-            display_text += f"     📊 X Column: {channel['x_column']} ↔ Vehicle: {channel['vehicle_x_channel']}\n"
-            display_text += f"     📈 Y Column: {channel['y_column']} ↔ Vehicle: {channel['vehicle_y_channel']}\n"
-            display_text += f"     📋 Z Column: {channel['z_column']}\n"
-            display_text += f"     📏 Units: {channel['units']}\n"
-            if channel['comment']:
-                display_text += f"     💬 Comment: {channel['comment']}\n"
-            display_text += "-" * 80 + "\n"
-        
-        display_text += f"\nTotal: {len(self.custom_channels)} custom channels"
-        
-        self.channels_display.insert("1.0", display_text)
+        # Populate with current channels
+        for channel in self.custom_channels:
+            values = [
+                channel.get('name', ''),
+                os.path.basename(channel.get('csv_file', '')),
+                channel.get('x_column', ''),
+                channel.get('y_column', ''),
+                channel.get('z_column', ''),
+                channel.get('vehicle_x_channel', ''),
+                channel.get('vehicle_y_channel', ''),
+                channel.get('units', ''),
+                channel.get('comment', '')
+            ]
+            self.channels_tree.insert("", "end", values=values)
     
     def clear_all_channels(self):
         """Clear all custom channels after confirmation."""
@@ -959,12 +1027,11 @@ class VehicleLogChannelAppenderModern:
         """Apply search filter to channels display."""
         search_term = self.search_var.get().lower()
         
-        if not search_term:
-            self.update_channels_display()
-            return
+        # Clear existing items
+        for item in self.channels_tree.get_children():
+            self.channels_tree.delete(item)
         
-        # Filter channels based on search term
-        filtered_channels = []
+        # Filter and display channels
         for channel in self.custom_channels:
             channel_text = ' '.join([
                 channel.get('name', ''),
@@ -978,35 +1045,20 @@ class VehicleLogChannelAppenderModern:
                 channel.get('comment', '')
             ]).lower()
             
-            if search_term in channel_text:
-                filtered_channels.append(channel)
-        
-        # Update display with filtered channels
-        self.display_filtered_channels(filtered_channels)
-    
-    def display_filtered_channels(self, channels):
-        """Display filtered channels."""
-        self.channels_display.delete("1.0", "end")
-        
-        if not channels:
-            self.channels_display.insert("1.0", f"No channels found matching search term: '{self.search_var.get()}'")
-            return
-        
-        display_text = f"🔍 SEARCH RESULTS ({len(channels)} channels)\n"
-        display_text += "=" * 80 + "\n\n"
-        
-        for i, channel in enumerate(channels, 1):
-            display_text += f"{i:2d}. 📈 {channel['name']}\n"
-            display_text += f"     📁 CSV File: {os.path.basename(channel['csv_file'])}\n"
-            display_text += f"     📊 X Column: {channel['x_column']} ↔ Vehicle: {channel['vehicle_x_channel']}\n"
-            display_text += f"     📈 Y Column: {channel['y_column']} ↔ Vehicle: {channel['vehicle_y_channel']}\n"
-            display_text += f"     📋 Z Column: {channel['z_column']}\n"
-            display_text += f"     📏 Units: {channel['units']}\n"
-            if channel['comment']:
-                display_text += f"     💬 Comment: {channel['comment']}\n"
-            display_text += "-" * 80 + "\n"
-        
-        self.channels_display.insert("1.0", display_text)
+            # If no search term or term matches, show the channel
+            if not search_term or search_term in channel_text:
+                values = [
+                    channel.get('name', ''),
+                    os.path.basename(channel.get('csv_file', '')),
+                    channel.get('x_column', ''),
+                    channel.get('y_column', ''),
+                    channel.get('z_column', ''),
+                    channel.get('vehicle_x_channel', ''),
+                    channel.get('vehicle_y_channel', ''),
+                    channel.get('units', ''),
+                    channel.get('comment', '')
+                ]
+                self.channels_tree.insert("", "end", values=values)
     
     def clear_search(self):
         """Clear search field and show all channels."""
@@ -1020,27 +1072,109 @@ class VehicleLogChannelAppenderModern:
         messagebox.showinfo("Filters", "Use the search box for basic filtering.\nAdvanced filters will be added in future updates.")
     
     def edit_selected_channel(self):
-        """Edit the selected channel (simplified implementation)."""
-        if not self.custom_channels:
-            messagebox.showinfo("Info", "No channels to edit.")
+        """Edit the selected channel."""
+        selection = self.channels_tree.selection()
+        if not selection:
+            messagebox.showwarning("Warning", "Please select a channel to edit!")
+            return
+            
+        item = selection[0]
+        values = self.channels_tree.item(item)['values']
+        
+        # Find the actual channel in the list by name
+        channel_name = values[0]
+        channel = None
+        channel_index = None
+        
+        for i, ch in enumerate(self.custom_channels):
+            if ch['name'] == channel_name:
+                channel = ch
+                channel_index = i
+                break
+        
+        if not channel:
+            messagebox.showerror("Error", "Channel not found!")
             return
         
-        # For now, just show a simple dialog to select which channel to edit
-        # In a full implementation, you'd track selection in the display
-        messagebox.showinfo("Edit Channel", "Channel editing will be implemented.\nFor now, delete and re-add the channel.")
+        # Fill the input fields with current values
+        self.channel_name_var.set(channel['name'])
+        self.csv_file_var.set(channel['csv_file'])
+        
+        # Load CSV columns and set values
+        try:
+            df = pd.read_csv(channel['csv_file'], nrows=1)
+            columns = df.columns.tolist()
+            
+            self.x_col_combo.set_completion_list(columns)
+            self.y_col_combo.set_completion_list(columns)
+            self.z_col_combo.set_completion_list(columns)
+            
+            self.x_col_var.set(channel['x_column'])
+            self.y_col_var.set(channel['y_column'])
+            self.z_col_var.set(channel['z_column'])
+        except Exception as e:
+            self.log_status(f"⚠️ Error loading CSV columns: {str(e)}")
+        
+        self.veh_x_var.set(channel['vehicle_x_channel'])
+        self.veh_y_var.set(channel['vehicle_y_channel'])
+        self.units_var.set(channel['units'])
+        self.comment_var.set(channel['comment'])
+        
+        # Remove the channel (will be re-added when user clicks Add)
+        del self.custom_channels[channel_index]
+        self.update_channels_display()
+        
+        self.log_status(f"✏️ Editing channel: {channel_name}")
     
     def delete_selected_channel(self):
-        """Delete the selected channel (simplified implementation)."""
-        if not self.custom_channels:
-            messagebox.showinfo("Info", "No channels to delete.")
+        """Delete the selected channel."""
+        selection = self.channels_tree.selection()
+        if not selection:
+            messagebox.showwarning("Warning", "Please select a channel to delete!")
             return
+            
+        item = selection[0]
+        values = self.channels_tree.item(item)['values']
+        channel_name = values[0]
         
-        # For now, delete the last added channel
-        # In a full implementation, you'd track selection in the display
-        if messagebox.askyesno("Confirm Delete", f"Delete the last channel: '{self.custom_channels[-1]['name']}'?"):
-            deleted_channel = self.custom_channels.pop()
+        if messagebox.askyesno("Confirm Delete", f"Are you sure you want to delete channel '{channel_name}'?"):
+            # Find and remove the channel
+            for i, channel in enumerate(self.custom_channels):
+                if channel['name'] == channel_name:
+                    del self.custom_channels[i]
+                    break
+            
             self.update_channels_display()
-            self.log_status(f"🗑️ Deleted channel: {deleted_channel['name']}")
+            self.log_status(f"🗑️ Deleted channel: {channel_name}")
+    
+    def duplicate_selected_channel(self):
+        """Duplicate the selected channel."""
+        selection = self.channels_tree.selection()
+        if not selection:
+            messagebox.showwarning("Warning", "Please select a channel to duplicate!")
+            return
+            
+        item = selection[0]
+        values = self.channels_tree.item(item)['values']
+        channel_name = values[0]
+        
+        # Find the channel
+        for channel in self.custom_channels:
+            if channel['name'] == channel_name:
+                # Create a copy with modified name
+                new_channel = channel.copy()
+                new_channel['name'] = f"{channel['name']}_copy"
+                
+                # Ensure unique name
+                counter = 1
+                while any(ch['name'] == new_channel['name'] for ch in self.custom_channels):
+                    new_channel['name'] = f"{channel['name']}_copy_{counter}"
+                    counter += 1
+                
+                self.custom_channels.append(new_channel)
+                self.update_channels_display()
+                self.log_status(f"📋 Duplicated channel: {channel_name} → {new_channel['name']}")
+                break
     
     def export_channel_config(self):
         """Export channel configuration to JSON."""
@@ -1272,22 +1406,22 @@ class VehicleLogChannelAppenderModern:
         # Create raster dialog
         raster_dialog = ctk.CTkToplevel(self.root)
         raster_dialog.title('🎯 Set Time Raster - Advanced Analysis')
-        raster_dialog.geometry('600x500')
+        raster_dialog.geometry('800x700')
         raster_dialog.transient(self.root)
         raster_dialog.grab_set()
         
         # Center dialog
         raster_dialog.update_idletasks()
-        x = (raster_dialog.winfo_screenwidth() // 2) - 300
-        y = (raster_dialog.winfo_screenheight() // 2) - 250
-        raster_dialog.geometry(f"600x500+{x}+{y}")
+        x = (raster_dialog.winfo_screenwidth() // 2) - 400
+        y = (raster_dialog.winfo_screenheight() // 2) - 350
+        raster_dialog.geometry(f"800x700+{x}+{y}")
         
         main_frame = ctk.CTkFrame(raster_dialog)
         main_frame.pack(fill="both", expand=True, padx=20, pady=20)
         
         title_label = ctk.CTkLabel(
             main_frame,
-            text="🎯 Time Raster Configuration",
+            text="🎯 Time Raster Configuration with Channel Analysis",
             font=ctk.CTkFont(size=18, weight="bold")
         )
         title_label.pack(pady=(10, 15))
@@ -1310,27 +1444,150 @@ class VehicleLogChannelAppenderModern:
             if min_rasters:
                 overall_min_raster = max(min_rasters)
         
-        # Info text
-        info_text = ctk.CTkLabel(
-            main_frame,
-            text=f"Recommended minimum raster: {overall_min_raster:.6f} seconds\n"
-                 f"Limiting channel: {limiting_channel}\n\n"
-                 f"Enter raster value in seconds:",
-            font=ctk.CTkFont(size=12),
-            justify="center"
-        )
-        info_text.pack(pady=(0, 15))
+        # Info frame with better layout
+        info_frame = ctk.CTkFrame(main_frame)
+        info_frame.pack(fill="x", pady=(0, 15))
         
-        # Entry field
+        info_text = ctk.CTkLabel(
+            info_frame,
+            text="The vehicle channels may have different sampling rates.\n"
+                 "Specify a time raster (in seconds) to resample all signals to the same time base.\n"
+                 "Lower rasters provide finer resolution but require interpolation if original data is coarser.",
+            font=ctk.CTkFont(size=11),
+            justify="left"
+        )
+        info_text.pack(padx=15, pady=10)
+        
+        # Minimum raster warning frame
+        warning_frame = ctk.CTkFrame(main_frame)
+        warning_frame.pack(fill="x", pady=(0, 15))
+        
+        warning_label = ctk.CTkLabel(
+            warning_frame,
+            text=f"⚠️ Recommended minimum raster: {overall_min_raster:.6f} seconds ({overall_min_raster*1000:.2f} ms)",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color="#ff6b35"
+        )
+        warning_label.pack(padx=15, pady=(10, 5))
+        
+        limiting_label = ctk.CTkLabel(
+            warning_frame,
+            text=f"Limiting channel: {limiting_channel}",
+            font=ctk.CTkFont(size=11),
+            text_color="#ff9500"
+        )
+        limiting_label.pack(padx=15, pady=(0, 10))
+        
+        # Channel analysis table
+        analysis_frame = ctk.CTkFrame(main_frame)
+        analysis_frame.pack(fill="both", expand=True, pady=(0, 15))
+        
+        analysis_title = ctk.CTkLabel(
+            analysis_frame,
+            text="📊 Per-Channel Analysis",
+            font=ctk.CTkFont(size=14, weight="bold")
+        )
+        analysis_title.pack(pady=(10, 5))
+        
+        # Create treeview for channel analysis
+        import tkinter.ttk as ttk
+        analysis_tree_frame = ctk.CTkFrame(analysis_frame)
+        analysis_tree_frame.pack(fill="both", expand=True, padx=15, pady=(0, 15))
+        
+        columns = ("Channel", "Min Interval", "Avg Interval", "Suggested Min Raster", "Samples", "Status")
+        analysis_tree = ttk.Treeview(analysis_tree_frame, columns=columns, show="headings", height=8)
+        
+        # Configure columns
+        for col in columns:
+            analysis_tree.heading(col, text=col)
+            analysis_tree.column(col, width=120)
+        
+        # Populate tree with color indicators
+        for ch_name, analysis in channel_analysis.items():
+            if 'error' in analysis:
+                # Red for errors
+                analysis_tree.insert("", "end", values=(
+                    ch_name, "Error", "Error", "Error", "Error", "❌ " + analysis['error']
+                ), tags=("error",))
+            elif 'note' in analysis:
+                # Yellow for CSV files
+                analysis_tree.insert("", "end", values=(
+                    ch_name, "N/A", "N/A", "N/A", analysis.get('sample_count', 'N/A'), "⚠️ " + analysis['note']
+                ), tags=("warning",))
+            else:
+                # Green for good channels
+                status = "✅ Good"
+                if analysis.get('suggested_min_raster', 0) > 0.01:  # Above 10ms might be concerning
+                    status = "⚠️ Low rate"
+                
+                analysis_tree.insert("", "end", values=(
+                    ch_name,
+                    f"{analysis['min_interval']:.6f}s",
+                    f"{analysis['avg_interval']:.6f}s", 
+                    f"{analysis['suggested_min_raster']:.6f}s",
+                    analysis['sample_count'],
+                    status
+                ), tags=("good",))
+        
+        # Configure row colors
+        analysis_tree.tag_configure("error", background="#ffcccc")
+        analysis_tree.tag_configure("warning", background="#fff3cd")
+        analysis_tree.tag_configure("good", background="#d4edda")
+        
+        # Add scrollbar
+        tree_scroll = ttk.Scrollbar(analysis_tree_frame, orient="vertical", command=analysis_tree.yview)
+        analysis_tree.configure(yscrollcommand=tree_scroll.set)
+        
+        analysis_tree.pack(side="left", fill="both", expand=True)
+        tree_scroll.pack(side="right", fill="y")
+        
+        # Input section
+        input_frame = ctk.CTkFrame(main_frame)
+        input_frame.pack(fill="x", pady=(0, 15))
+        
+        input_label = ctk.CTkLabel(
+            input_frame,
+            text="Enter raster value (seconds):",
+            font=ctk.CTkFont(size=12, weight="bold")
+        )
+        input_label.pack(pady=(10, 5))
+        
         raster_var = ctk.StringVar(value=str(overall_min_raster))
         raster_entry = ctk.CTkEntry(
-            main_frame,
+            input_frame,
             textvariable=raster_var,
             placeholder_text="Enter raster in seconds",
             font=ctk.CTkFont(size=12),
             width=200
         )
-        raster_entry.pack(pady=(0, 15))
+        raster_entry.pack(pady=(0, 10))
+        
+        # Status label for live feedback
+        status_label = ctk.CTkLabel(
+            input_frame,
+            text="✅ Good choice - within recommended range.",
+            font=ctk.CTkFont(size=10),
+            text_color="#28a745"
+        )
+        status_label.pack(pady=(0, 10))
+        
+        def update_status():
+            try:
+                value = float(raster_var.get())
+                if value < overall_min_raster:
+                    status_label.configure(text=f"⚠️ Below recommended minimum ({overall_min_raster:.6f}s). Interpolation will be used.", 
+                                         text_color="#ff6b35")
+                elif value > overall_min_raster * 10:
+                    status_label.configure(text="⚠️ Very large raster - may lose detail.", 
+                                         text_color="#ff9500")
+                else:
+                    status_label.configure(text="✅ Good choice - within recommended range.", 
+                                         text_color="#28a745")
+            except ValueError:
+                status_label.configure(text="❌ Invalid number format.", 
+                                     text_color="#dc3545")
+        
+        raster_var.trace('w', lambda *args: update_status())
         
         # Quick selection buttons
         quick_frame = ctk.CTkFrame(main_frame)
@@ -1343,25 +1600,30 @@ class VehicleLogChannelAppenderModern:
         )
         quick_label.pack(pady=(10, 5))
         
-        # Suggested values
+        button_container = ctk.CTkFrame(quick_frame)
+        button_container.pack(pady=(0, 10))
+        
+        # Suggested values with color coding
         suggested_values = [
-            (overall_min_raster, "Recommended"),
-            (0.001, "1ms"),
-            (0.01, "10ms"),
-            (0.02, "20ms"),
-            (0.05, "50ms"),
-            (0.1, "100ms")
+            (overall_min_raster, "Recommended", "#28a745"),
+            (0.001, "1ms", "#17a2b8" if 0.001 >= overall_min_raster else "#ffc107"),
+            (0.01, "10ms", "#17a2b8" if 0.01 >= overall_min_raster else "#ffc107"),
+            (0.02, "20ms", "#17a2b8" if 0.02 >= overall_min_raster else "#ffc107"),
+            (0.05, "50ms", "#17a2b8" if 0.05 >= overall_min_raster else "#ffc107"),
+            (0.1, "100ms", "#17a2b8" if 0.1 >= overall_min_raster else "#ffc107")
         ]
         
-        for value, label in suggested_values:
+        for value, label, color in suggested_values:
             btn = ctk.CTkButton(
-                quick_frame,
-                text=f"{label} ({value}s)",
+                button_container,
+                text=f"{label}\n({value}s)",
                 command=lambda v=value: raster_var.set(str(v)),
-                width=120,
-                height=30
+                width=80,
+                height=40,
+                font=ctk.CTkFont(size=10),
+                fg_color=color
             )
-            btn.pack(side="left", padx=5, pady=5)
+            btn.pack(side="left", padx=3, pady=5)
         
         result = [None]
         
@@ -1382,20 +1644,24 @@ class VehicleLogChannelAppenderModern:
         
         # Buttons
         button_frame = ctk.CTkFrame(main_frame)
-        button_frame.pack(pady=20)
+        button_frame.pack(pady=15)
         
         ok_btn = ctk.CTkButton(
             button_frame,
             text='✅ OK',
             command=confirm_raster,
-            font=ctk.CTkFont(size=12, weight="bold")
+            font=ctk.CTkFont(size=12, weight="bold"),
+            width=100,
+            height=35
         )
         ok_btn.pack(side='left', padx=10)
         
         cancel_btn = ctk.CTkButton(
             button_frame,
             text='❌ Cancel',
-            command=cancel_raster
+            command=cancel_raster,
+            width=100,
+            height=35
         )
         cancel_btn.pack(side='left', padx=10)
         
@@ -1707,24 +1973,28 @@ class VehicleLogChannelAppenderModern:
             settings = self.get_all_settings()
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             num_channels = len(self.custom_channels)
+            slot_name = self.slot_names.get(slot, f"Slot {slot}")
             
-            settings['description'] = f"Quick save slot {slot} - {timestamp} ({num_channels} channels)"
+            settings['description'] = f"Quick save slot {slot} ({slot_name}) - {timestamp} ({num_channels} channels)"
+            settings['slot_name'] = slot_name
             
             filename = f"quick_save_slot_{slot}_modern.json"
             with open(filename, 'w') as f:
                 json.dump(settings, f, indent=2)
             
-            self.log_status(f"✅ Quick saved to slot {slot} ({num_channels} channels)")
+            self.log_status(f"✅ Quick saved to slot {slot} ({slot_name}): {num_channels} channels")
             
         except Exception as e:
-            self.log_status(f"❌ Error quick saving to slot {slot}: {str(e)}")
+            slot_name = self.slot_names.get(slot, f"Slot {slot}")
+            self.log_status(f"❌ Error quick saving to slot {slot} ({slot_name}): {str(e)}")
     
     def quick_load_settings(self, slot):
         """Quick load settings from a numbered slot."""
         filename = f"quick_save_slot_{slot}_modern.json"
         
         if not os.path.exists(filename):
-            self.log_status(f"⚠️ Quick save slot {slot} is empty")
+            slot_name = self.slot_names.get(slot, f"Slot {slot}")
+            self.log_status(f"⚠️ Quick save slot {slot} ({slot_name}) is empty")
             return
         
         try:
@@ -1732,13 +2002,93 @@ class VehicleLogChannelAppenderModern:
                 settings = json.load(f)
             
             num_channels = len(settings.get('custom_channels', []))
+            slot_name = self.slot_names.get(slot, f"Slot {slot}")
             
             # Quick load without confirmation for faster workflow
             self.restore_settings(settings)
-            self.log_status(f"✅ Quick loaded from slot {slot} ({num_channels} channels)")
+            self.log_status(f"✅ Quick loaded from slot {slot} ({slot_name}): {num_channels} channels")
             
         except Exception as e:
-            self.log_status(f"❌ Error quick loading from slot {slot}: {str(e)}")
+            slot_name = self.slot_names.get(slot, f"Slot {slot}")
+            self.log_status(f"❌ Error quick loading from slot {slot} ({slot_name}): {str(e)}")
+    
+    def update_slot_name(self, slot, event):
+        """Update slot name when entry is modified."""
+        new_name = self.slot_name_entries[slot].get().strip()
+        if new_name:
+            self.slot_names[slot] = new_name
+        else:
+            self.slot_names[slot] = f"Slot {slot}"
+    
+    def rename_slot_dialog(self, slot):
+        """Open dialog to rename a slot."""
+        dialog = ctk.CTkToplevel(self.root)
+        dialog.title(f"Rename Slot {slot}")
+        dialog.geometry("300x150")
+        dialog.resizable(False, False)
+        
+        # Center the dialog
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        # Create layout
+        main_frame = ctk.CTkFrame(dialog)
+        main_frame.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        # Label
+        label = ctk.CTkLabel(
+            main_frame,
+            text=f"Enter new name for Slot {slot}:",
+            font=ctk.CTkFont(size=12, weight="bold")
+        )
+        label.pack(pady=(0, 10))
+        
+        # Entry
+        name_var = ctk.StringVar(value=self.slot_names[slot])
+        entry = ctk.CTkEntry(
+            main_frame,
+            textvariable=name_var,
+            width=200,
+            font=ctk.CTkFont(size=11)
+        )
+        entry.pack(pady=(0, 15))
+        entry.focus()
+        entry.select_range(0, 'end')
+        
+        # Buttons
+        button_frame = ctk.CTkFrame(main_frame)
+        button_frame.pack()
+        
+        def confirm():
+            new_name = name_var.get().strip()
+            if new_name:
+                self.slot_names[slot] = new_name
+                self.slot_name_entries[slot].delete(0, 'end')
+                self.slot_name_entries[slot].insert(0, new_name)
+                self.log_status(f"✅ Renamed slot {slot} to '{new_name}'")
+            dialog.destroy()
+        
+        def cancel():
+            dialog.destroy()
+        
+        ok_btn = ctk.CTkButton(
+            button_frame,
+            text="OK",
+            command=confirm,
+            width=60
+        )
+        ok_btn.pack(side="left", padx=5)
+        
+        cancel_btn = ctk.CTkButton(
+            button_frame,
+            text="Cancel",
+            command=cancel,
+            width=60
+        )
+        cancel_btn.pack(side="left", padx=5)
+        
+        # Bind Enter key
+        entry.bind('<Return>', lambda e: confirm())
     
     def get_all_settings(self):
         """Get all current settings in a single dictionary."""
@@ -1747,6 +2097,7 @@ class VehicleLogChannelAppenderModern:
             'custom_channels': self.custom_channels,
             'output_format': self.output_format_var.get(),
             'theme': self.theme_menu.get(),
+            'slot_names': self.slot_names,
             'form_settings': {
                 'channel_name': self.channel_name_var.get(),
                 'csv_file': self.csv_file_var.get(),
@@ -1778,6 +2129,14 @@ class VehicleLogChannelAppenderModern:
             if 'theme' in settings:
                 self.theme_menu.set(settings['theme'])
                 self.change_theme(settings['theme'])
+            
+            # Restore slot names
+            if 'slot_names' in settings:
+                self.slot_names.update(settings['slot_names'])
+                for slot, name in self.slot_names.items():
+                    if slot in self.slot_name_entries:
+                        self.slot_name_entries[slot].delete(0, 'end')
+                        self.slot_name_entries[slot].insert(0, name)
             
             # Restore form settings
             if 'form_settings' in settings:

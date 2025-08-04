@@ -1,0 +1,23 @@
+# Requirements for Vehicle Log Channel Appender - Modern UI Edition
+# Install with: pip install -r requirements_modern.txt
+
+# Core data processing libraries
+numpy>=1.21.0
+pandas>=1.3.0
+scipy>=1.7.0
+
+# MDF file handling
+asammdf>=7.0.0
+
+# Modern UI Framework
+customtkinter>=5.2.0
+
+# Additional utilities
+pathlib2>=2.3.0; python_version<"3.4"
+
+# Optional: Enhanced file handling
+chardet>=4.0.0
+
+# Development and testing (optional)
+# pytest>=6.0.0
+# black>=21.0.0

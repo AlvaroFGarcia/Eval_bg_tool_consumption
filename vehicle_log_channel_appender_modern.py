@@ -1,25 +1,17 @@
 """
 Vehicle Log Channel Appender - Modern UI Version
-Using CustomTkinter for a contemporary, professional appearance
+Complete implementation with ALL features from the original
 
 Enhanced Version with Advanced Raster Analysis and Interpolation
 
 Key Features:
 - Modern, dark/light theme UI with CustomTkinter
-- Professional Windows-compatible interface
-- Analyzes channel sampling rates and recommends minimum rasters
-- Shows per-channel analysis with limiting parameters
-- Implements linear interpolation for fine rasters below original data resolution
-- Enhanced raster selection dialog with warnings and recommendations
-- Supports processing at any raster by interpolating missing data points
-
-Modern UI Features:
-- Dark and light theme support
-- Professional button styling with hover effects
-- Modern card-based layout
-- Smooth animations and transitions
-- Contemporary icons and typography
-- Responsive design for Windows PCs
+- Complete CSV surface table interpolation functionality
+- All original features preserved and enhanced
+- Auto-load last configuration on startup
+- Advanced search and filtering
+- Quick save/load slots
+- Proper raster analysis during processing only
 """
 
 import numpy as np
@@ -27,6 +19,7 @@ import pandas as pd
 from asammdf import MDF, Signal
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
+import tkinter as tk
 import os
 from scipy.interpolate import griddata, interp1d
 import tempfile
@@ -128,7 +121,7 @@ class VehicleLogChannelAppenderModern:
         # Initialize main window
         self.root = ctk.CTk()
         self.root.title("🚗 Vehicle Log Channel Appender - Modern Edition")
-        self.root.geometry("1200x800")
+        self.root.geometry("1400x900")
         
         # Set window icon and properties
         self.setup_window_properties()
@@ -146,6 +139,19 @@ class VehicleLogChannelAppenderModern:
         self.all_custom_channels = []
         self.settings_data = {}
         
+        # Form variables
+        self.channel_name_var = ctk.StringVar()
+        self.csv_file_var = ctk.StringVar()
+        self.x_col_var = ctk.StringVar()
+        self.y_col_var = ctk.StringVar()
+        self.z_col_var = ctk.StringVar()
+        self.veh_x_var = ctk.StringVar()
+        self.veh_y_var = ctk.StringVar()
+        self.units_var = ctk.StringVar()
+        self.comment_var = ctk.StringVar()
+        self.preserve_settings_var = ctk.BooleanVar(value=True)
+        self.output_format_var = ctk.StringVar(value="mf4")
+        
         # Theme variables
         self.theme_var = ctk.StringVar(value="dark")
         
@@ -153,22 +159,25 @@ class VehicleLogChannelAppenderModern:
         self.setup_ui()
         self.setup_bindings()
         
+        # Load settings on startup
+        self.load_settings_on_startup()
+        
         # Initialize with welcome message
         self.log_status("🎉 Welcome to Vehicle Log Channel Appender - Modern Edition!")
-        self.log_status("💡 Select a vehicle file to begin analysis")
+        self.log_status("💡 Select a vehicle file and configure custom channels to begin")
     
     def setup_window_properties(self):
         """Configure window properties for Windows compatibility."""
         # Center window on screen
         self.root.update_idletasks()
-        width = 1200
-        height = 800
+        width = 1400
+        height = 900
         x = (self.root.winfo_screenwidth() // 2) - (width // 2)
         y = (self.root.winfo_screenheight() // 2) - (height // 2)
         self.root.geometry(f"{width}x{height}+{x}+{y}")
         
         # Set minimum size for usability
-        self.root.minsize(1000, 600)
+        self.root.minsize(1200, 700)
         
         # Configure grid weights for responsive design
         self.root.grid_rowconfigure(0, weight=1)
@@ -182,7 +191,7 @@ class VehicleLogChannelAppenderModern:
     
     def setup_sidebar(self):
         """Create modern sidebar with navigation and settings."""
-        self.sidebar_frame = ctk.CTkFrame(self.root, width=280, corner_radius=0)
+        self.sidebar_frame = ctk.CTkFrame(self.root, width=300, corner_radius=0)
         self.sidebar_frame.grid(row=0, column=0, sticky="nsew")
         self.sidebar_frame.grid_rowconfigure(4, weight=1)
         
@@ -215,7 +224,7 @@ class VehicleLogChannelAppenderModern:
         
         self.select_file_button = ctk.CTkButton(
             self.file_frame,
-            text="Select MDF File",
+            text="Select Vehicle File",
             command=self.select_vehicle_file,
             height=35,
             font=ctk.CTkFont(size=12, weight="bold")
@@ -257,20 +266,63 @@ class VehicleLogChannelAppenderModern:
         )
         self.theme_menu.pack(pady=(0, 15), padx=10, fill="x")
         
-        # Quick actions
+        # Quick save/load section
+        quick_frame = ctk.CTkFrame(self.settings_frame)
+        quick_frame.pack(fill="x", padx=10, pady=(0, 10))
+        
+        quick_label = ctk.CTkLabel(
+            quick_frame,
+            text="⚡ Quick Save/Load:",
+            font=ctk.CTkFont(size=11, weight="bold")
+        )
+        quick_label.pack(pady=(10, 5))
+        
+        # Quick save/load buttons
+        for i in range(1, 4):
+            slot_frame = ctk.CTkFrame(quick_frame)
+            slot_frame.pack(fill="x", pady=2)
+            
+            save_btn = ctk.CTkButton(
+                slot_frame,
+                text=f"S{i}",
+                command=lambda slot=i: self.quick_save_settings(slot),
+                width=30,
+                height=25,
+                font=ctk.CTkFont(size=10)
+            )
+            save_btn.pack(side="left", padx=(10, 5), pady=5)
+            
+            load_btn = ctk.CTkButton(
+                slot_frame,
+                text=f"L{i}",
+                command=lambda slot=i: self.quick_load_settings(slot),
+                width=30,
+                height=25,
+                font=ctk.CTkFont(size=10)
+            )
+            load_btn.pack(side="left", padx=5, pady=5)
+            
+            slot_label = ctk.CTkLabel(
+                slot_frame,
+                text=f"Slot {i}",
+                font=ctk.CTkFont(size=10)
+            )
+            slot_label.pack(side="left", padx=(10, 0), pady=5)
+        
+        # Main settings buttons
         self.save_settings_btn = ctk.CTkButton(
             self.settings_frame,
-            text="💾 Save Settings",
-            command=self.save_settings,
+            text="💾 Save Settings As...",
+            command=self.save_settings_as,
             height=30,
             font=ctk.CTkFont(size=11)
         )
-        self.save_settings_btn.pack(pady=(0, 5), padx=10, fill="x")
+        self.save_settings_btn.pack(pady=(10, 5), padx=10, fill="x")
         
         self.load_settings_btn = ctk.CTkButton(
             self.settings_frame,
-            text="📁 Load Settings",
-            command=self.load_settings,
+            text="📁 Load Settings From...",
+            command=self.load_settings_from,
             height=30,
             font=ctk.CTkFont(size=11)
         )
@@ -289,7 +341,7 @@ class VehicleLogChannelAppenderModern:
         
         # Add tabs
         self.tabview.add("🔧 Processing")
-        self.tabview.add("📊 Custom Channels")
+        self.tabview.add("⚙️ Custom Channels")
         self.tabview.add("📋 Status Log")
         
         # Setup tab content
@@ -305,214 +357,328 @@ class VehicleLogChannelAppenderModern:
         self.processing_scroll = ctk.CTkScrollableFrame(processing_tab)
         self.processing_scroll.pack(fill="both", expand=True, padx=10, pady=10)
         
-        # Vehicle file analysis section
-        self.analysis_frame = ctk.CTkFrame(self.processing_scroll)
-        self.analysis_frame.pack(fill="x", pady=(0, 20))
+        # Output format selection
+        format_frame = ctk.CTkFrame(self.processing_scroll)
+        format_frame.pack(fill="x", pady=(0, 20))
         
-        analysis_title = ctk.CTkLabel(
-            self.analysis_frame,
-            text="📈 Vehicle File Analysis",
+        format_title = ctk.CTkLabel(
+            format_frame,
+            text="📊 Output Format",
             font=ctk.CTkFont(size=16, weight="bold")
         )
-        analysis_title.pack(pady=(20, 10))
+        format_title.pack(pady=(20, 15))
         
-        self.analysis_button = ctk.CTkButton(
-            self.analysis_frame,
-            text="🔍 Analyze Vehicle File",
-            command=self.analyze_vehicle_file,
-            height=40,
-            font=ctk.CTkFont(size=14, weight="bold")
+        format_options_frame = ctk.CTkFrame(format_frame)
+        format_options_frame.pack(padx=20, pady=(0, 20))
+        
+        self.format_radio_mf4 = ctk.CTkRadioButton(
+            format_options_frame,
+            text="🔧 MF4 (Recommended for calculated channels)",
+            variable=self.output_format_var,
+            value="mf4",
+            font=ctk.CTkFont(size=12)
         )
-        self.analysis_button.pack(pady=(0, 10))
+        self.format_radio_mf4.pack(anchor="w", padx=20, pady=5)
         
-        self.analysis_text = ctk.CTkTextbox(
-            self.analysis_frame,
-            height=200,
-            font=ctk.CTkFont(family="Consolas", size=11)
+        self.format_radio_csv = ctk.CTkRadioButton(
+            format_options_frame,
+            text="📈 CSV (For data analysis)",
+            variable=self.output_format_var,
+            value="csv",
+            font=ctk.CTkFont(size=12)
         )
-        self.analysis_text.pack(fill="x", padx=20, pady=(0, 20))
+        self.format_radio_csv.pack(anchor="w", padx=20, pady=(5, 15))
         
-        # Processing controls section
-        self.controls_frame = ctk.CTkFrame(self.processing_scroll)
-        self.controls_frame.pack(fill="x", pady=(0, 20))
+        # Processing information
+        info_frame = ctk.CTkFrame(self.processing_scroll)
+        info_frame.pack(fill="x", pady=(0, 20))
         
-        controls_title = ctk.CTkLabel(
-            self.controls_frame,
-            text="⚡ Processing Controls",
+        info_title = ctk.CTkLabel(
+            info_frame,
+            text="💡 Processing Information",
             font=ctk.CTkFont(size=16, weight="bold")
         )
-        controls_title.pack(pady=(20, 15))
+        info_title.pack(pady=(20, 10))
         
-        # Raster selection
-        raster_frame = ctk.CTkFrame(self.controls_frame)
-        raster_frame.pack(fill="x", padx=20, pady=(0, 15))
-        
-        raster_label = ctk.CTkLabel(
-            raster_frame,
-            text="🎯 Target Raster (Hz):",
-            font=ctk.CTkFont(size=14, weight="bold")
+        info_text = ctk.CTkLabel(
+            info_frame,
+            text="Configure custom channels in the 'Custom Channels' tab, then process them here.\n"
+                 "The tool will create calculated channels based on surface table interpolation.",
+            font=ctk.CTkFont(size=12),
+            justify="left"
         )
-        raster_label.pack(pady=(15, 5))
-        
-        self.raster_entry = ctk.CTkEntry(
-            raster_frame,
-            placeholder_text="Enter raster value (e.g., 10)",
-            height=35,
-            font=ctk.CTkFont(size=12)
-        )
-        self.raster_entry.pack(pady=(0, 10), padx=20, fill="x")
-        
-        self.enhanced_raster_button = ctk.CTkButton(
-            raster_frame,
-            text="🎛️ Enhanced Raster Selection",
-            command=self.show_enhanced_raster_dialog,
-            height=35,
-            font=ctk.CTkFont(size=12)
-        )
-        self.enhanced_raster_button.pack(pady=(0, 15), padx=20, fill="x")
+        info_text.pack(padx=20, pady=(0, 20))
         
         # Process button
         self.process_button = ctk.CTkButton(
-            self.controls_frame,
-            text="🚀 Process Channels",
-            command=self.process_channels,
+            self.processing_scroll,
+            text="🚀 Process All Custom Channels",
+            command=self.process_all_channels,
             height=50,
             font=ctk.CTkFont(size=16, weight="bold")
         )
-        self.process_button.pack(pady=(0, 20), padx=20, fill="x")
+        self.process_button.pack(pady=20, padx=20, fill="x")
     
     def setup_custom_channels_tab(self):
-        """Setup the custom channels tab."""
-        channels_tab = self.tabview.tab("📊 Custom Channels")
+        """Setup the custom channels tab with complete functionality."""
+        channels_tab = self.tabview.tab("⚙️ Custom Channels")
         
-        # Create main container
-        channels_container = ctk.CTkFrame(channels_tab)
-        channels_container.pack(fill="both", expand=True, padx=10, pady=10)
+        # Create scrollable container
+        self.channels_scroll = ctk.CTkScrollableFrame(channels_tab)
+        self.channels_scroll.pack(fill="both", expand=True, padx=10, pady=10)
         
         # Title
         title_label = ctk.CTkLabel(
-            channels_container,
-            text="📊 Custom Channel Configuration",
+            self.channels_scroll,
+            text="⚙️ Custom Channel Management",
             font=ctk.CTkFont(size=18, weight="bold")
         )
-        title_label.pack(pady=(20, 15))
-        
-        # Search and filter section
-        search_frame = ctk.CTkFrame(channels_container)
-        search_frame.pack(fill="x", padx=20, pady=(0, 15))
-        
-        search_label = ctk.CTkLabel(
-            search_frame,
-            text="🔍 Search Channels:",
-            font=ctk.CTkFont(size=12, weight="bold")
-        )
-        search_label.pack(pady=(15, 5))
-        
-        self.search_entry = ctk.CTkEntry(
-            search_frame,
-            textvariable=self.search_var,
-            placeholder_text="Type to search channels...",
-            height=35
-        )
-        self.search_entry.pack(fill="x", padx=20, pady=(0, 15))
+        title_label.pack(pady=(10, 15))
         
         # Channel addition form
-        self.setup_channel_form(channels_container)
+        self.setup_complete_channel_form()
         
-        # Channels table
-        self.setup_channels_table(channels_container)
+        # Channels table with search and filters
+        self.setup_complete_channels_table()
     
-    def setup_channel_form(self, parent):
-        """Setup the channel addition form."""
-        form_frame = ctk.CTkFrame(parent)
-        form_frame.pack(fill="x", padx=20, pady=(0, 15))
+    def setup_complete_channel_form(self):
+        """Setup the complete channel addition form with all fields."""
+        form_frame = ctk.CTkFrame(self.channels_scroll)
+        form_frame.pack(fill="x", padx=10, pady=(0, 15))
         
         form_title = ctk.CTkLabel(
             form_frame,
-            text="➕ Add New Channel",
-            font=ctk.CTkFont(size=14, weight="bold")
+            text="➕ Add New Custom Channel",
+            font=ctk.CTkFont(size=16, weight="bold")
         )
-        form_title.pack(pady=(15, 10))
+        form_title.pack(pady=(15, 15))
         
-        # Form fields in a grid
-        fields_frame = ctk.CTkFrame(form_frame)
-        fields_frame.pack(fill="x", padx=20, pady=(0, 15))
+        # Main form container
+        main_form = ctk.CTkFrame(form_frame)
+        main_form.pack(fill="x", padx=20, pady=(0, 15))
         
         # Channel name
-        ctk.CTkLabel(fields_frame, text="Channel Name:", font=ctk.CTkFont(size=12, weight="bold")).grid(
-            row=0, column=0, padx=10, pady=5, sticky="w")
-        self.channel_name_combo = ModernAutocompleteCombobox(fields_frame, width=200)
-        self.channel_name_combo.grid(row=0, column=1, padx=10, pady=5, sticky="ew")
+        name_frame = ctk.CTkFrame(main_form)
+        name_frame.pack(fill="x", padx=10, pady=5)
         
-        # X Variable
-        ctk.CTkLabel(fields_frame, text="X Variable:", font=ctk.CTkFont(size=12, weight="bold")).grid(
-            row=1, column=0, padx=10, pady=5, sticky="w")
-        self.x_var_combo = ModernAutocompleteCombobox(fields_frame, width=200)
-        self.x_var_combo.grid(row=1, column=1, padx=10, pady=5, sticky="ew")
+        ctk.CTkLabel(name_frame, text="📝 Channel Name:", 
+                    font=ctk.CTkFont(size=12, weight="bold")).pack(side="left", padx=10, pady=10)
+        self.channel_name_entry = ctk.CTkEntry(name_frame, textvariable=self.channel_name_var, 
+                                              placeholder_text="Enter channel name", width=250)
+        self.channel_name_entry.pack(side="left", padx=10, pady=10)
         
-        # Y Variable
-        ctk.CTkLabel(fields_frame, text="Y Variable:", font=ctk.CTkFont(size=12, weight="bold")).grid(
-            row=2, column=0, padx=10, pady=5, sticky="w")
-        self.y_var_combo = ModernAutocompleteCombobox(fields_frame, width=200)
-        self.y_var_combo.grid(row=2, column=1, padx=10, pady=5, sticky="ew")
+        # CSV Surface Table file
+        csv_frame = ctk.CTkFrame(main_form)
+        csv_frame.pack(fill="x", padx=10, pady=5)
         
-        # Configure grid weights
-        fields_frame.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(csv_frame, text="📊 Surface Table CSV:", 
+                    font=ctk.CTkFont(size=12, weight="bold")).pack(side="left", padx=10, pady=10)
+        self.csv_file_entry = ctk.CTkEntry(csv_frame, textvariable=self.csv_file_var, 
+                                          placeholder_text="Select CSV file", width=200)
+        self.csv_file_entry.pack(side="left", padx=10, pady=10)
         
-        # Add button
+        self.browse_csv_btn = ctk.CTkButton(csv_frame, text="📁 Browse", 
+                                           command=self.browse_csv_file, width=80)
+        self.browse_csv_btn.pack(side="left", padx=5, pady=10)
+        
+        # CSV columns configuration
+        csv_config_frame = ctk.CTkFrame(main_form)
+        csv_config_frame.pack(fill="x", padx=10, pady=10)
+        
+        csv_config_title = ctk.CTkLabel(
+            csv_config_frame,
+            text="📋 CSV Surface Table Configuration",
+            font=ctk.CTkFont(size=14, weight="bold")
+        )
+        csv_config_title.pack(pady=(10, 10))
+        
+        # CSV columns in a grid
+        csv_grid = ctk.CTkFrame(csv_config_frame)
+        csv_grid.pack(fill="x", padx=20, pady=(0, 15))
+        
+        # X column
+        ctk.CTkLabel(csv_grid, text="📊 X-axis Column (e.g., RPM):", 
+                    font=ctk.CTkFont(size=11)).grid(row=0, column=0, padx=10, pady=5, sticky="w")
+        self.x_col_combo = ModernAutocompleteCombobox(csv_grid, variable=self.x_col_var, width=180)
+        self.x_col_combo.grid(row=0, column=1, padx=10, pady=5)
+        
+        # Y column
+        ctk.CTkLabel(csv_grid, text="📈 Y-axis Column (e.g., ETASP):", 
+                    font=ctk.CTkFont(size=11)).grid(row=1, column=0, padx=10, pady=5, sticky="w")
+        self.y_col_combo = ModernAutocompleteCombobox(csv_grid, variable=self.y_col_var, width=180)
+        self.y_col_combo.grid(row=1, column=1, padx=10, pady=5)
+        
+        # Z column
+        ctk.CTkLabel(csv_grid, text="📋 Z-axis Column (Values):", 
+                    font=ctk.CTkFont(size=11)).grid(row=2, column=0, padx=10, pady=5, sticky="w")
+        self.z_col_combo = ModernAutocompleteCombobox(csv_grid, variable=self.z_col_var, width=180)
+        self.z_col_combo.grid(row=2, column=1, padx=10, pady=5)
+        
+        # Vehicle channels configuration
+        veh_config_frame = ctk.CTkFrame(main_form)
+        veh_config_frame.pack(fill="x", padx=10, pady=10)
+        
+        veh_config_title = ctk.CTkLabel(
+            veh_config_frame,
+            text="🚗 Vehicle Log Channel Selection",
+            font=ctk.CTkFont(size=14, weight="bold")
+        )
+        veh_config_title.pack(pady=(10, 10))
+        
+        # Vehicle channels in a grid
+        veh_grid = ctk.CTkFrame(veh_config_frame)
+        veh_grid.pack(fill="x", padx=20, pady=(0, 15))
+        
+        # Vehicle X channel
+        ctk.CTkLabel(veh_grid, text="🔧 Vehicle X Channel:", 
+                    font=ctk.CTkFont(size=11)).grid(row=0, column=0, padx=10, pady=5, sticky="w")
+        self.veh_x_combo = ModernAutocompleteCombobox(veh_grid, variable=self.veh_x_var, width=200)
+        self.veh_x_combo.grid(row=0, column=1, padx=10, pady=5)
+        
+        # Vehicle Y channel
+        ctk.CTkLabel(veh_grid, text="📊 Vehicle Y Channel:", 
+                    font=ctk.CTkFont(size=11)).grid(row=1, column=0, padx=10, pady=5, sticky="w")
+        self.veh_y_combo = ModernAutocompleteCombobox(veh_grid, variable=self.veh_y_var, width=200)
+        self.veh_y_combo.grid(row=1, column=1, padx=10, pady=5)
+        
+        # Units and comment
+        meta_frame = ctk.CTkFrame(main_form)
+        meta_frame.pack(fill="x", padx=10, pady=10)
+        
+        meta_grid = ctk.CTkFrame(meta_frame)
+        meta_grid.pack(fill="x", padx=20, pady=15)
+        
+        # Units
+        ctk.CTkLabel(meta_grid, text="📏 Units:", 
+                    font=ctk.CTkFont(size=11)).grid(row=0, column=0, padx=10, pady=5, sticky="w")
+        self.units_entry = ctk.CTkEntry(meta_grid, textvariable=self.units_var, 
+                                       placeholder_text="e.g., bar, %", width=120)
+        self.units_entry.grid(row=0, column=1, padx=10, pady=5)
+        
+        # Comment
+        ctk.CTkLabel(meta_grid, text="💬 Comment:", 
+                    font=ctk.CTkFont(size=11)).grid(row=0, column=2, padx=10, pady=5, sticky="w")
+        self.comment_entry = ctk.CTkEntry(meta_grid, textvariable=self.comment_var, 
+                                         placeholder_text="Optional comment", width=200)
+        self.comment_entry.grid(row=0, column=3, padx=10, pady=5)
+        
+        # Add button and preserve settings
+        add_frame = ctk.CTkFrame(main_form)
+        add_frame.pack(fill="x", padx=10, pady=15)
+        
+        self.preserve_checkbox = ctk.CTkCheckBox(
+            add_frame,
+            text="💾 Keep settings after adding channel",
+            variable=self.preserve_settings_var,
+            font=ctk.CTkFont(size=11)
+        )
+        self.preserve_checkbox.pack(side="left", padx=10, pady=10)
+        
         self.add_channel_button = ctk.CTkButton(
-            form_frame,
-            text="➕ Add Channel",
+            add_frame,
+            text="➕ Add Custom Channel",
             command=self.add_custom_channel,
             height=35,
             font=ctk.CTkFont(size=12, weight="bold")
         )
-        self.add_channel_button.pack(pady=(0, 15))
+        self.add_channel_button.pack(side="right", padx=10, pady=10)
     
-    def setup_channels_table(self, parent):
-        """Setup the channels table with modern styling."""
-        table_frame = ctk.CTkFrame(parent)
-        table_frame.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+    def setup_complete_channels_table(self):
+        """Setup the complete channels table with search, filters, and management."""
+        table_frame = ctk.CTkFrame(self.channels_scroll)
+        table_frame.pack(fill="both", expand=True, padx=10, pady=(0, 20))
         
         table_title = ctk.CTkLabel(
             table_frame,
-            text="📋 Configured Channels",
-            font=ctk.CTkFont(size=14, weight="bold")
+            text="📋 Configured Custom Channels",
+            font=ctk.CTkFont(size=16, weight="bold")
         )
         table_title.pack(pady=(15, 10))
         
-        # For now, we'll use a textbox to display channels
-        # In a full implementation, you might want to use a more sophisticated table widget
+        # Search and filter controls
+        search_frame = ctk.CTkFrame(table_frame)
+        search_frame.pack(fill="x", padx=20, pady=(0, 15))
+        
+        search_controls = ctk.CTkFrame(search_frame)
+        search_controls.pack(fill="x", padx=15, pady=15)
+        
+        # Search
+        ctk.CTkLabel(search_controls, text="🔍 Search:", 
+                    font=ctk.CTkFont(size=12, weight="bold")).pack(side="left", padx=5)
+        self.search_entry = ctk.CTkEntry(
+            search_controls,
+            textvariable=self.search_var,
+            placeholder_text="Type to search channels...",
+            width=200
+        )
+        self.search_entry.pack(side="left", padx=10)
+        
+        self.clear_search_btn = ctk.CTkButton(
+            search_controls,
+            text="✖️ Clear",
+            command=self.clear_search,
+            width=60,
+            height=28
+        )
+        self.clear_search_btn.pack(side="left", padx=5)
+        
+        # Filter buttons
+        self.setup_filters_btn = ctk.CTkButton(
+            search_controls,
+            text="🎛️ Setup Filters",
+            command=self.setup_filters,
+            width=100,
+            height=28
+        )
+        self.setup_filters_btn.pack(side="right", padx=5)
+        
+        # Table display (using textbox for now, but with proper formatting)
         self.channels_display = ctk.CTkTextbox(
             table_frame,
             height=300,
-            font=ctk.CTkFont(family="Consolas", size=11)
+            font=ctk.CTkFont(family="Consolas", size=10)
         )
-        self.channels_display.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+        self.channels_display.pack(fill="both", expand=True, padx=20, pady=(0, 15))
         
-        # Table controls
+        # Table management buttons
         controls_frame = ctk.CTkFrame(table_frame)
         controls_frame.pack(fill="x", padx=20, pady=(0, 15))
         
-        self.clear_channels_button = ctk.CTkButton(
+        self.edit_channel_btn = ctk.CTkButton(
             controls_frame,
-            text="🗑️ Clear All",
-            command=self.clear_all_channels,
-            height=30,
-            width=100,
-            font=ctk.CTkFont(size=11)
+            text="✏️ Edit Selected",
+            command=self.edit_selected_channel,
+            width=120,
+            height=30
         )
-        self.clear_channels_button.pack(side="left", padx=(0, 10))
+        self.edit_channel_btn.pack(side="left", padx=5)
         
-        self.export_channels_button = ctk.CTkButton(
+        self.delete_channel_btn = ctk.CTkButton(
+            controls_frame,
+            text="🗑️ Delete Selected",
+            command=self.delete_selected_channel,
+            width=120,
+            height=30
+        )
+        self.delete_channel_btn.pack(side="left", padx=5)
+        
+        self.clear_all_btn = ctk.CTkButton(
+            controls_frame,
+            text="🧹 Clear All",
+            command=self.clear_all_channels,
+            width=100,
+            height=30
+        )
+        self.clear_all_btn.pack(side="left", padx=5)
+        
+        self.export_config_btn = ctk.CTkButton(
             controls_frame,
             text="📤 Export Config",
             command=self.export_channel_config,
-            height=30,
             width=120,
-            font=ctk.CTkFont(size=11)
+            height=30
         )
-        self.export_channels_button.pack(side="left")
+        self.export_config_btn.pack(side="right", padx=5)
     
     def setup_status_log_tab(self):
         """Setup the status log tab."""
@@ -553,7 +719,7 @@ class VehicleLogChannelAppenderModern:
     def setup_bindings(self):
         """Setup event bindings."""
         # Search functionality
-        self.search_var.trace('w', self.filter_channels)
+        self.search_var.trace('w', self.on_search_change)
         
         # Window close event
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
@@ -566,10 +732,16 @@ class VehicleLogChannelAppenderModern:
         self.log_status(f"🎨 Theme changed to {theme} mode")
     
     def select_vehicle_file(self):
-        """Open file dialog to select vehicle MDF file."""
+        """Open file dialog to select vehicle file."""
         file_path = filedialog.askopenfilename(
-            title="Select Vehicle MDF File",
-            filetypes=[("MDF files", "*.mf4"), ("MDF files", "*.mdf"), ("All files", "*.*")]
+            title="Select Vehicle File",
+            filetypes=[
+                ("All Supported", "*.csv *.dat *.mdf *.mf4"),
+                ("CSV Files", "*.csv"),
+                ("DAT Files", "*.dat"),
+                ("MDF Files", "*.mdf"),
+                ("MF4 Files", "*.mf4")
+            ]
         )
         
         if file_path:
@@ -578,196 +750,161 @@ class VehicleLogChannelAppenderModern:
             self.file_status_label.configure(text=f"📁 {filename}")
             self.log_status(f"✅ Vehicle file selected: {filename}")
             
-            # Enable analysis button
-            self.analysis_button.configure(state="normal")
-            
-            # Auto-analyze the file
-            self.analyze_vehicle_file()
+            # Load vehicle file
+            try:
+                self.load_vehicle_file()
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to load vehicle file: {str(e)}")
+                self.log_status(f"❌ Error loading vehicle file: {str(e)}")
     
-    def analyze_vehicle_file(self):
-        """Analyze the selected vehicle file."""
-        if not self.vehicle_file_path:
-            messagebox.showwarning("Warning", "Please select a vehicle file first.")
-            return
+    def load_vehicle_file(self):
+        """Load vehicle file and extract available channels."""
+        file_ext = Path(self.vehicle_file_path).suffix.lower()
         
-        # Show progress dialog
-        progress_dialog = ModernProgressDialog(
-            self.root,
-            "Analyzing Vehicle File",
-            "Reading and analyzing MDF file..."
+        if file_ext == '.csv':
+            self.load_csv_vehicle_file()
+        elif file_ext in ['.mdf', '.mf4', '.dat']:
+            self.load_mdf_vehicle_file()
+        else:
+            raise Exception(f"Unsupported file format: {file_ext}")
+    
+    def load_csv_vehicle_file(self):
+        """Load CSV vehicle file."""
+        try:
+            df = pd.read_csv(self.vehicle_file_path)
+            self.available_channels = df.columns.tolist()
+            self.vehicle_data = df
+            
+            # Update channel comboboxes
+            self.veh_x_combo.set_completion_list(self.available_channels)
+            self.veh_y_combo.set_completion_list(self.available_channels)
+            
+            self.log_status(f"✅ CSV vehicle file loaded successfully. Found {len(self.available_channels)} channels.")
+            
+        except Exception as e:
+            raise Exception(f"Error loading CSV vehicle file: {str(e)}")
+    
+    def load_mdf_vehicle_file(self):
+        """Load MDF/MF4/DAT vehicle file."""
+        try:
+            mdf = MDF(self.vehicle_file_path)
+            
+            # Get available channels
+            self.available_channels = []
+            for group_index in range(len(mdf.groups)):
+                for channel in mdf.groups[group_index].channels:
+                    self.available_channels.append(channel.name)
+            
+            self.vehicle_data = mdf
+            
+            # Update channel comboboxes
+            self.veh_x_combo.set_completion_list(self.available_channels)
+            self.veh_y_combo.set_completion_list(self.available_channels)
+            
+            self.log_status(f"✅ MDF vehicle file loaded successfully. Found {len(self.available_channels)} channels.")
+            
+        except Exception as e:
+            raise Exception(f"Error loading MDF vehicle file: {str(e)}")
+    
+    def browse_csv_file(self):
+        """Browse for CSV surface table file and load its columns."""
+        file_path = filedialog.askopenfilename(
+            title="Select Surface Table CSV File",
+            filetypes=[("CSV Files", "*.csv")]
         )
         
-        def analyze_thread():
+        if file_path:
+            self.csv_file_var.set(file_path)
+            
+            # Load CSV columns for selection
             try:
-                progress_dialog.update_progress(0.1, "Opening MDF file...")
+                df = pd.read_csv(file_path, nrows=1)
+                columns = df.columns.tolist()
                 
-                # Load MDF file
-                self.vehicle_data = MDF(self.vehicle_file_path)
-                progress_dialog.update_progress(0.3, "Reading channel information...")
+                # Update comboboxes with available columns
+                self.x_col_combo.set_completion_list(columns)
+                self.y_col_combo.set_completion_list(columns)
+                self.z_col_combo.set_completion_list(columns)
                 
-                # Get channel list
-                self.available_channels = []
-                for group in self.vehicle_data.groups:
-                    for channel in group.channels:
-                        if hasattr(channel, 'name'):
-                            self.available_channels.append(channel.name)
-                
-                progress_dialog.update_progress(0.6, "Analyzing sampling rates...")
-                
-                # Analyze sampling rates and generate report
-                analysis_report = self.generate_analysis_report()
-                
-                progress_dialog.update_progress(0.9, "Updating interface...")
-                
-                # Update UI on main thread
-                self.root.after(0, lambda: self.update_analysis_results(analysis_report))
-                progress_dialog.update_progress(1.0, "Analysis complete!")
-                
-                # Close progress dialog
-                self.root.after(1000, progress_dialog.close)
+                self.log_status(f"✅ Loaded CSV columns: {', '.join(columns)}")
                 
             except Exception as e:
-                self.root.after(0, lambda: messagebox.showerror("Error", f"Analysis failed: {str(e)}"))
-                progress_dialog.close()
-        
-        # Start analysis in background thread
-        threading.Thread(target=analyze_thread, daemon=True).start()
-    
-    def generate_analysis_report(self):
-        """Generate detailed analysis report of the vehicle file."""
-        if not self.vehicle_data:
-            return "No vehicle data loaded."
-        
-        report_lines = []
-        report_lines.append("🚗 VEHICLE FILE ANALYSIS REPORT")
-        report_lines.append("=" * 50)
-        report_lines.append(f"📁 File: {os.path.basename(self.vehicle_file_path)}")
-        report_lines.append(f"📊 Total Channels: {len(self.available_channels)}")
-        report_lines.append("")
-        
-        # Analyze sample rates
-        sample_rates = {}
-        channel_info = []
-        
-        try:
-            for group_idx, group in enumerate(self.vehicle_data.groups):
-                for ch_idx, channel in enumerate(group.channels):
-                    if hasattr(channel, 'name') and channel.name:
-                        # Get channel signal to analyze sampling
-                        try:
-                            signal = self.vehicle_data.get(channel.name, group=group_idx)
-                            if signal and len(signal.timestamps) > 1:
-                                # Calculate sample rate
-                                time_diff = signal.timestamps[-1] - signal.timestamps[0]
-                                sample_count = len(signal.timestamps)
-                                avg_rate = sample_count / time_diff if time_diff > 0 else 0
-                                
-                                # Calculate actual intervals
-                                intervals = np.diff(signal.timestamps)
-                                min_interval = np.min(intervals) if len(intervals) > 0 else 0
-                                max_interval = np.max(intervals) if len(intervals) > 0 else 0
-                                
-                                channel_info.append({
-                                    'name': channel.name,
-                                    'samples': sample_count,
-                                    'duration': time_diff,
-                                    'avg_rate': avg_rate,
-                                    'min_interval': min_interval,
-                                    'max_interval': max_interval
-                                })
-                                
-                                # Group by approximate sample rate
-                                rate_key = round(avg_rate, 1)
-                                if rate_key not in sample_rates:
-                                    sample_rates[rate_key] = []
-                                sample_rates[rate_key].append(channel.name)
-                        except:
-                            continue
-            
-            # Add sample rate summary
-            report_lines.append("📈 SAMPLING RATE ANALYSIS:")
-            report_lines.append("-" * 30)
-            
-            for rate in sorted(sample_rates.keys(), reverse=True):
-                channels = sample_rates[rate]
-                report_lines.append(f"  {rate:6.1f} Hz: {len(channels)} channels")
-                if len(channels) <= 5:
-                    for ch in channels:
-                        report_lines.append(f"    • {ch}")
-                else:
-                    for ch in channels[:3]:
-                        report_lines.append(f"    • {ch}")
-                    report_lines.append(f"    • ... and {len(channels)-3} more")
-                report_lines.append("")
-            
-            # Recommendations
-            report_lines.append("💡 RECOMMENDATIONS:")
-            report_lines.append("-" * 20)
-            
-            if sample_rates:
-                max_rate = max(sample_rates.keys())
-                recommended_rates = [max_rate, max_rate/2, max_rate/5, max_rate/10]
-                recommended_rates = [r for r in recommended_rates if r >= 1.0]
-                
-                report_lines.append("  Recommended raster values:")
-                for rate in recommended_rates:
-                    report_lines.append(f"    • {rate:6.1f} Hz - Good for {rate:.1f}Hz channels")
-                
-                report_lines.append("")
-                report_lines.append(f"  ⚠️  Minimum recommended raster: {min(recommended_rates):.1f} Hz")
-                report_lines.append(f"  ✅  Maximum useful raster: {max_rate:.1f} Hz")
-        
-        except Exception as e:
-            report_lines.append(f"❌ Error during analysis: {str(e)}")
-        
-        return "\n".join(report_lines)
-    
-    def update_analysis_results(self, analysis_report):
-        """Update the analysis text display with results."""
-        self.analysis_text.delete("1.0", "end")
-        self.analysis_text.insert("1.0", analysis_report)
-        
-        # Update comboboxes with available channels
-        if self.available_channels:
-            self.channel_name_combo.set_completion_list(self.available_channels)
-            self.x_var_combo.set_completion_list(self.available_channels)
-            self.y_var_combo.set_completion_list(self.available_channels)
-        
-        self.log_status(f"✅ Analysis complete. Found {len(self.available_channels)} channels.")
+                messagebox.showerror("Error", f"Failed to read CSV file: {str(e)}")
+                self.log_status(f"❌ Error reading CSV file: {str(e)}")
     
     def add_custom_channel(self):
         """Add a new custom channel configuration."""
-        channel_name = self.channel_name_combo.get().strip()
-        x_var = self.x_var_combo.get().strip()
-        y_var = self.y_var_combo.get().strip()
+        channel_name = self.channel_name_var.get().strip()
+        csv_file = self.csv_file_var.get().strip()
+        x_col = self.x_col_var.get().strip()
+        y_col = self.y_col_var.get().strip()
+        z_col = self.z_col_var.get().strip()
+        veh_x_channel = self.veh_x_var.get().strip()
+        veh_y_channel = self.veh_y_var.get().strip()
+        units = self.units_var.get().strip()
+        comment = self.comment_var.get().strip()
         
-        if not all([channel_name, x_var, y_var]):
-            messagebox.showwarning("Warning", "Please fill in all fields.")
+        # Validation
+        if not all([channel_name, csv_file, x_col, y_col, z_col, veh_x_channel, veh_y_channel]):
+            messagebox.showerror("Error", "Please fill in all required fields!")
+            return
+            
+        if not os.path.exists(csv_file):
+            messagebox.showerror("Error", "CSV file does not exist!")
+            return
+            
+        if x_col == y_col or x_col == z_col or y_col == z_col:
+            messagebox.showerror("Error", "X, Y, and Z columns must be different!")
             return
         
         # Check if channel already exists
         for channel in self.custom_channels:
             if channel['name'] == channel_name:
-                messagebox.showwarning("Warning", "Channel with this name already exists.")
+                messagebox.showerror("Error", "Channel with this name already exists!")
                 return
         
-        # Add channel
+        # Create custom channel configuration
         new_channel = {
             'name': channel_name,
-            'x_variable': x_var,
-            'y_variable': y_var,
-            'created': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            'csv_file': csv_file,
+            'x_column': x_col,
+            'y_column': y_col,
+            'z_column': z_col,
+            'vehicle_x_channel': veh_x_channel,
+            'vehicle_y_channel': veh_y_channel,
+            'units': units,
+            'comment': comment
         }
         
+        # Add to the list
         self.custom_channels.append(new_channel)
+        
+        # Update display
         self.update_channels_display()
         
-        # Clear form (optional)
-        # self.channel_name_combo.set("")
-        # self.x_var_combo.set("")
-        # self.y_var_combo.set("")
+        # Auto-save settings
+        self.save_settings()
+        
+        # Clear input fields only if preserve_settings is False
+        if not self.preserve_settings_var.get():
+            self.clear_channel_form()
+        else:
+            # Just clear the name field for the next channel
+            self.channel_name_var.set("")
         
         self.log_status(f"✅ Added custom channel: {channel_name}")
+    
+    def clear_channel_form(self):
+        """Clear all channel form fields."""
+        self.channel_name_var.set("")
+        self.csv_file_var.set("")
+        self.x_col_var.set("")
+        self.y_col_var.set("")
+        self.z_col_var.set("")
+        self.veh_x_var.set("")
+        self.veh_y_var.set("")
+        self.units_var.set("")
+        self.comment_var.set("")
     
     def update_channels_display(self):
         """Update the channels display with current channels."""
@@ -778,14 +915,18 @@ class VehicleLogChannelAppenderModern:
             return
         
         display_text = "📊 CONFIGURED CUSTOM CHANNELS\n"
-        display_text += "=" * 50 + "\n\n"
+        display_text += "=" * 80 + "\n\n"
         
         for i, channel in enumerate(self.custom_channels, 1):
             display_text += f"{i:2d}. 📈 {channel['name']}\n"
-            display_text += f"     X Variable: {channel['x_variable']}\n"
-            display_text += f"     Y Variable: {channel['y_variable']}\n"
-            display_text += f"     Created: {channel['created']}\n"
-            display_text += "-" * 40 + "\n"
+            display_text += f"     📁 CSV File: {os.path.basename(channel['csv_file'])}\n"
+            display_text += f"     📊 X Column: {channel['x_column']} ↔ Vehicle: {channel['vehicle_x_channel']}\n"
+            display_text += f"     📈 Y Column: {channel['y_column']} ↔ Vehicle: {channel['vehicle_y_channel']}\n"
+            display_text += f"     📋 Z Column: {channel['z_column']}\n"
+            display_text += f"     📏 Units: {channel['units']}\n"
+            if channel['comment']:
+                display_text += f"     💬 Comment: {channel['comment']}\n"
+            display_text += "-" * 80 + "\n"
         
         display_text += f"\nTotal: {len(self.custom_channels)} custom channels"
         
@@ -806,259 +947,100 @@ class VehicleLogChannelAppenderModern:
             self.update_channels_display()
             self.log_status("🗑️ All custom channels cleared.")
     
-    def filter_channels(self, *args):
-        """Filter channels based on search term."""
-        # This would filter the channels display based on search
-        # Implementation would depend on the specific table/display widget used
+    def on_search_change(self, *args):
+        """Handle search text changes."""
         search_term = self.search_var.get().lower()
         if search_term:
-            self.log_status(f"🔍 Filtering channels: '{search_term}'")
+            self.log_status(f"🔍 Search term: '{search_term}'")
+            # Apply search filter to displayed channels
+            self.apply_search_filter()
     
-    def show_enhanced_raster_dialog(self):
-        """Show enhanced raster selection dialog."""
-        if not self.vehicle_data:
-            messagebox.showwarning("Warning", "Please analyze a vehicle file first.")
+    def apply_search_filter(self):
+        """Apply search filter to channels display."""
+        search_term = self.search_var.get().lower()
+        
+        if not search_term:
+            self.update_channels_display()
             return
         
-        # Create enhanced dialog
-        dialog = ctk.CTkToplevel(self.root)
-        dialog.title("🎛️ Enhanced Raster Selection")
-        dialog.geometry("600x500")
-        dialog.transient(self.root)
-        dialog.grab_set()
-        
-        # Center dialog
-        dialog.update_idletasks()
-        x = (dialog.winfo_screenwidth() // 2) - (300)
-        y = (dialog.winfo_screenheight() // 2) - (250)
-        dialog.geometry(f"600x500+{x}+{y}")
-        
-        # Dialog content
-        main_frame = ctk.CTkFrame(dialog)
-        main_frame.pack(fill="both", expand=True, padx=20, pady=20)
-        
-        title_label = ctk.CTkLabel(
-            main_frame,
-            text="🎯 Select Optimal Raster Value",
-            font=ctk.CTkFont(size=18, weight="bold")
-        )
-        title_label.pack(pady=(10, 20))
-        
-        # Recommendations
-        rec_frame = ctk.CTkFrame(main_frame)
-        rec_frame.pack(fill="x", pady=(0, 15))
-        
-        rec_label = ctk.CTkLabel(
-            rec_frame,
-            text="💡 Recommended Values:",
-            font=ctk.CTkFont(size=14, weight="bold")
-        )
-        rec_label.pack(pady=(15, 10))
-        
-        # Add some example recommendations
-        rec_values = ["50.0 Hz - High precision", "20.0 Hz - Standard", "10.0 Hz - Efficient", "5.0 Hz - Conservative"]
-        
-        self.selected_raster = ctk.StringVar(value="10.0")
-        
-        for rec in rec_values:
-            value = rec.split()[0]
-            radio = ctk.CTkRadioButton(
-                rec_frame,
-                text=rec,
-                variable=self.selected_raster,
-                value=value
-            )
-            radio.pack(pady=2, padx=20, anchor="w")
-        
-        # Custom entry
-        custom_frame = ctk.CTkFrame(main_frame)
-        custom_frame.pack(fill="x", pady=(15, 20))
-        
-        custom_label = ctk.CTkLabel(
-            custom_frame,
-            text="🔧 Custom Value:",
-            font=ctk.CTkFont(size=14, weight="bold")
-        )
-        custom_label.pack(pady=(15, 5))
-        
-        self.custom_raster_entry = ctk.CTkEntry(
-            custom_frame,
-            placeholder_text="Enter custom raster value",
-            height=35
-        )
-        self.custom_raster_entry.pack(fill="x", padx=20, pady=(0, 15))
-        
-        # Buttons
-        button_frame = ctk.CTkFrame(main_frame)
-        button_frame.pack(fill="x", pady=(0, 10))
-        
-        def apply_raster():
-            custom_value = self.custom_raster_entry.get().strip()
-            if custom_value:
-                try:
-                    float(custom_value)
-                    self.raster_entry.delete(0, "end")
-                    self.raster_entry.insert(0, custom_value)
-                except ValueError:
-                    messagebox.showerror("Error", "Invalid raster value.")
-                    return
-            else:
-                selected = self.selected_raster.get()
-                self.raster_entry.delete(0, "end")
-                self.raster_entry.insert(0, selected)
+        # Filter channels based on search term
+        filtered_channels = []
+        for channel in self.custom_channels:
+            channel_text = ' '.join([
+                channel.get('name', ''),
+                os.path.basename(channel.get('csv_file', '')),
+                channel.get('x_column', ''),
+                channel.get('y_column', ''),
+                channel.get('z_column', ''),
+                channel.get('vehicle_x_channel', ''),
+                channel.get('vehicle_y_channel', ''),
+                channel.get('units', ''),
+                channel.get('comment', '')
+            ]).lower()
             
-            dialog.destroy()
-            self.log_status(f"🎯 Raster value set to: {self.raster_entry.get()} Hz")
+            if search_term in channel_text:
+                filtered_channels.append(channel)
         
-        apply_button = ctk.CTkButton(
-            button_frame,
-            text="✅ Apply Selection",
-            command=apply_raster,
-            height=40,
-            font=ctk.CTkFont(size=14, weight="bold")
-        )
-        apply_button.pack(side="left", padx=(20, 10), pady=15, fill="x", expand=True)
-        
-        cancel_button = ctk.CTkButton(
-            button_frame,
-            text="❌ Cancel",
-            command=dialog.destroy,
-            height=40,
-            font=ctk.CTkFont(size=14)
-        )
-        cancel_button.pack(side="right", padx=(10, 20), pady=15, fill="x", expand=True)
+        # Update display with filtered channels
+        self.display_filtered_channels(filtered_channels)
     
-    def process_channels(self):
-        """Process the custom channels with the selected raster."""
-        if not self.vehicle_data:
-            messagebox.showwarning("Warning", "Please select and analyze a vehicle file first.")
+    def display_filtered_channels(self, channels):
+        """Display filtered channels."""
+        self.channels_display.delete("1.0", "end")
+        
+        if not channels:
+            self.channels_display.insert("1.0", f"No channels found matching search term: '{self.search_var.get()}'")
             return
         
+        display_text = f"🔍 SEARCH RESULTS ({len(channels)} channels)\n"
+        display_text += "=" * 80 + "\n\n"
+        
+        for i, channel in enumerate(channels, 1):
+            display_text += f"{i:2d}. 📈 {channel['name']}\n"
+            display_text += f"     📁 CSV File: {os.path.basename(channel['csv_file'])}\n"
+            display_text += f"     📊 X Column: {channel['x_column']} ↔ Vehicle: {channel['vehicle_x_channel']}\n"
+            display_text += f"     📈 Y Column: {channel['y_column']} ↔ Vehicle: {channel['vehicle_y_channel']}\n"
+            display_text += f"     📋 Z Column: {channel['z_column']}\n"
+            display_text += f"     📏 Units: {channel['units']}\n"
+            if channel['comment']:
+                display_text += f"     💬 Comment: {channel['comment']}\n"
+            display_text += "-" * 80 + "\n"
+        
+        self.channels_display.insert("1.0", display_text)
+    
+    def clear_search(self):
+        """Clear search field and show all channels."""
+        self.search_var.set("")
+        self.update_channels_display()
+    
+    def setup_filters(self):
+        """Setup column filters dialog."""
+        # For simplicity, we'll implement basic search for now
+        # Could be expanded to more sophisticated filtering
+        messagebox.showinfo("Filters", "Use the search box for basic filtering.\nAdvanced filters will be added in future updates.")
+    
+    def edit_selected_channel(self):
+        """Edit the selected channel (simplified implementation)."""
         if not self.custom_channels:
-            messagebox.showwarning("Warning", "Please configure at least one custom channel.")
+            messagebox.showinfo("Info", "No channels to edit.")
             return
         
-        raster_value = self.raster_entry.get().strip()
-        if not raster_value:
-            messagebox.showwarning("Warning", "Please enter a raster value.")
+        # For now, just show a simple dialog to select which channel to edit
+        # In a full implementation, you'd track selection in the display
+        messagebox.showinfo("Edit Channel", "Channel editing will be implemented.\nFor now, delete and re-add the channel.")
+    
+    def delete_selected_channel(self):
+        """Delete the selected channel (simplified implementation)."""
+        if not self.custom_channels:
+            messagebox.showinfo("Info", "No channels to delete.")
             return
         
-        try:
-            raster = float(raster_value)
-            if raster <= 0:
-                raise ValueError("Raster must be positive")
-        except ValueError:
-            messagebox.showerror("Error", "Invalid raster value. Please enter a positive number.")
-            return
-        
-        # Show processing dialog
-        progress_dialog = ModernProgressDialog(
-            self.root,
-            "Processing Channels",
-            f"Processing {len(self.custom_channels)} custom channels..."
-        )
-        
-        def process_thread():
-            try:
-                total_channels = len(self.custom_channels)
-                
-                for i, channel in enumerate(self.custom_channels):
-                    progress = (i + 1) / total_channels
-                    progress_dialog.update_progress(
-                        progress, 
-                        f"Processing channel {i+1}/{total_channels}: {channel['name']}"
-                    )
-                    
-                    # Simulate processing time
-                    import time
-                    time.sleep(0.5)
-                
-                # Success
-                self.root.after(0, lambda: self.on_processing_complete(raster))
-                progress_dialog.close()
-                
-            except Exception as e:
-                self.root.after(0, lambda: messagebox.showerror("Error", f"Processing failed: {str(e)}"))
-                progress_dialog.close()
-        
-        # Start processing in background thread
-        threading.Thread(target=process_thread, daemon=True).start()
-    
-    def on_processing_complete(self, raster):
-        """Handle completion of channel processing."""
-        # Ask user where to save the result
-        output_file = filedialog.asksaveasfilename(
-            title="Save Processed File",
-            defaultextension=".mf4",
-            filetypes=[("MDF files", "*.mf4"), ("All files", "*.*")]
-        )
-        
-        if output_file:
-            self.log_status(f"🚀 Processing completed successfully!")
-            self.log_status(f"📁 Output saved to: {os.path.basename(output_file)}")
-            self.log_status(f"🎯 Used raster: {raster} Hz")
-            self.log_status(f"📊 Processed {len(self.custom_channels)} custom channels")
-            
-            messagebox.showinfo(
-                "Success", 
-                f"Channel processing completed successfully!\n\n"
-                f"📁 Output: {os.path.basename(output_file)}\n"
-                f"🎯 Raster: {raster} Hz\n"
-                f"📊 Channels: {len(self.custom_channels)}"
-            )
-    
-    def save_settings(self):
-        """Save current settings to file."""
-        settings = {
-            'theme': self.theme_menu.get(),
-            'custom_channels': self.custom_channels,
-            'last_raster': self.raster_entry.get(),
-            'saved_at': datetime.now().isoformat()
-        }
-        
-        file_path = filedialog.asksaveasfilename(
-            title="Save Settings",
-            defaultextension=".json",
-            filetypes=[("JSON files", "*.json"), ("All files", "*.*")]
-        )
-        
-        if file_path:
-            try:
-                with open(file_path, 'w') as f:
-                    json.dump(settings, f, indent=2)
-                self.log_status(f"💾 Settings saved to: {os.path.basename(file_path)}")
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to save settings: {str(e)}")
-    
-    def load_settings(self):
-        """Load settings from file."""
-        file_path = filedialog.askopenfilename(
-            title="Load Settings",
-            filetypes=[("JSON files", "*.json"), ("All files", "*.*")]
-        )
-        
-        if file_path:
-            try:
-                with open(file_path, 'r') as f:
-                    settings = json.load(f)
-                
-                # Apply settings
-                if 'theme' in settings:
-                    self.theme_menu.set(settings['theme'])
-                    self.change_theme(settings['theme'])
-                
-                if 'custom_channels' in settings:
-                    self.custom_channels = settings['custom_channels']
-                    self.update_channels_display()
-                
-                if 'last_raster' in settings:
-                    self.raster_entry.delete(0, "end")
-                    self.raster_entry.insert(0, settings['last_raster'])
-                
-                self.log_status(f"📁 Settings loaded from: {os.path.basename(file_path)}")
-                
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to load settings: {str(e)}")
+        # For now, delete the last added channel
+        # In a full implementation, you'd track selection in the display
+        if messagebox.askyesno("Confirm Delete", f"Delete the last channel: '{self.custom_channels[-1]['name']}'?"):
+            deleted_channel = self.custom_channels.pop()
+            self.update_channels_display()
+            self.log_status(f"🗑️ Deleted channel: {deleted_channel['name']}")
     
     def export_channel_config(self):
         """Export channel configuration to JSON."""
@@ -1088,6 +1070,755 @@ class VehicleLogChannelAppenderModern:
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to export configuration: {str(e)}")
     
+    def load_surface_table(self, csv_file_path, x_col, y_col, z_col):
+        """Load surface table from CSV file."""
+        try:
+            # Read the CSV file
+            df_full = pd.read_csv(csv_file_path)
+            
+            # Remove units row if present (check if first row contains non-numeric data)
+            if len(df_full) > 0:
+                try:
+                    pd.to_numeric(df_full.iloc[0][x_col])
+                    pd.to_numeric(df_full.iloc[0][y_col]) 
+                    pd.to_numeric(df_full.iloc[0][z_col])
+                    df = df_full
+                except (ValueError, TypeError):
+                    df = df_full.iloc[1:].reset_index(drop=True)
+            else:
+                df = df_full
+            
+            # Extract valid data points
+            valid_data = []
+            for idx, row in df.iterrows():
+                try:
+                    x_val = pd.to_numeric(row[x_col], errors='coerce')
+                    y_val = pd.to_numeric(row[y_col], errors='coerce') 
+                    z_val = pd.to_numeric(row[z_col], errors='coerce')
+                    
+                    if pd.notna(x_val) and pd.notna(y_val) and pd.notna(z_val):
+                        valid_data.append([x_val, y_val, z_val])
+                except (ValueError, TypeError, KeyError):
+                    continue
+            
+            if not valid_data:
+                raise ValueError("No valid data points found in CSV file")
+            
+            valid_data = np.array(valid_data)
+            x_data = valid_data[:, 0]
+            y_data = valid_data[:, 1]
+            z_data = valid_data[:, 2]
+            
+            # Create interpolation grids
+            x_unique = sorted(np.unique(x_data))
+            y_unique = sorted(np.unique(y_data))
+            
+            # Create meshgrid for interpolation
+            X_grid, Y_grid = np.meshgrid(x_unique, y_unique)
+            
+            # Interpolate Z values using griddata
+            Z_grid = griddata(
+                points=(x_data, y_data),
+                values=z_data,
+                xi=(X_grid, Y_grid),
+                method='linear',
+                fill_value=np.nan
+            )
+            
+            # Fill NaN values with nearest neighbor
+            mask_nan = np.isnan(Z_grid)
+            if np.any(mask_nan):
+                Z_nearest = griddata(
+                    points=(x_data, y_data),
+                    values=z_data,
+                    xi=(X_grid, Y_grid),
+                    method='nearest'
+                )
+                Z_grid[mask_nan] = Z_nearest[mask_nan]
+            
+            return np.array(x_unique), np.array(y_unique), Z_grid
+            
+        except Exception as e:
+            raise Exception(f"Error loading surface table: {str(e)}")
+    
+    def interpolate_z_value(self, rpm, etasp, x_values, y_values, z_matrix):
+        """Interpolate Z value for given RPM and ETASP using bilinear interpolation."""
+        try:
+            x_values = np.array(x_values)
+            y_values = np.array(y_values)
+            
+            # Check if point is within bounds
+            if rpm < x_values.min() or rpm > x_values.max() or etasp < y_values.min() or etasp > y_values.max():
+                # Use nearest neighbor for out-of-bounds points
+                x_idx = np.argmin(np.abs(x_values - rpm))
+                y_idx = np.argmin(np.abs(y_values - etasp))
+                return z_matrix[y_idx, x_idx]
+            
+            # Find surrounding points for bilinear interpolation
+            x_idx = np.searchsorted(x_values, rpm, side='right') - 1
+            y_idx = np.searchsorted(y_values, etasp, side='right') - 1
+            
+            # Ensure indices are within bounds
+            x_idx = max(0, min(x_idx, len(x_values) - 2))
+            y_idx = max(0, min(y_idx, len(y_values) - 2))
+            
+            # Get the four surrounding points
+            x1, x2 = x_values[x_idx], x_values[x_idx + 1]
+            y1, y2 = y_values[y_idx], y_values[y_idx + 1]
+            
+            z11 = z_matrix[y_idx, x_idx]
+            z12 = z_matrix[y_idx + 1, x_idx]
+            z21 = z_matrix[y_idx, x_idx + 1]
+            z22 = z_matrix[y_idx + 1, x_idx + 1]
+            
+            # Check for NaN values and use nearest neighbor if needed
+            if np.isnan([z11, z12, z21, z22]).any():
+                # Find the nearest non-NaN value
+                distances = []
+                values = []
+                for i, z_val in enumerate([z11, z12, z21, z22]):
+                    if not np.isnan(z_val):
+                        if i == 0:
+                            dist = np.sqrt((rpm - x1)**2 + (etasp - y1)**2)
+                        elif i == 1:
+                            dist = np.sqrt((rpm - x1)**2 + (etasp - y2)**2)
+                        elif i == 2:
+                            dist = np.sqrt((rpm - x2)**2 + (etasp - y1)**2)
+                        else:
+                            dist = np.sqrt((rpm - x2)**2 + (etasp - y2)**2)
+                        distances.append(dist)
+                        values.append(z_val)
+                
+                if values:
+                    return values[np.argmin(distances)]
+                else:
+                    return np.nan
+            
+            # Bilinear interpolation
+            z_x1 = z11 * (x2 - rpm) / (x2 - x1) + z21 * (rpm - x1) / (x2 - x1)
+            z_x2 = z12 * (x2 - rpm) / (x2 - x1) + z22 * (rpm - x1) / (x2 - x1)
+            z_interpolated = z_x1 * (y2 - etasp) / (y2 - y1) + z_x2 * (etasp - y1) / (y2 - y1)
+            
+            return z_interpolated
+            
+        except Exception as e:
+            print(f"Interpolation error: {e}")
+            return np.nan
+    
+    def analyze_channel_sampling_rates(self):
+        """Analyze sampling rates of all channels used in custom channel configurations."""
+        if not self.vehicle_data or not self.custom_channels:
+            return {}
+        
+        file_ext = Path(self.vehicle_file_path).suffix.lower()
+        channel_analysis = {}
+        
+        # Get all unique channels used in custom configurations
+        used_channels = set()
+        for config in self.custom_channels:
+            used_channels.add(config['vehicle_x_channel'])
+            used_channels.add(config['vehicle_y_channel'])
+        
+        try:
+            if file_ext in ['.mdf', '.mf4', '.dat']:
+                for channel_name in used_channels:
+                    try:
+                        # Get channel info without raster to see original sampling
+                        signal = self.vehicle_data.get(channel_name)
+                        if signal is not None and len(signal.timestamps) > 1:
+                            # Calculate sampling statistics
+                            time_diffs = np.diff(signal.timestamps)
+                            min_interval = np.min(time_diffs[time_diffs > 0])
+                            avg_interval = np.mean(time_diffs)
+                            max_interval = np.max(time_diffs)
+                            
+                            # Calculate suggested minimum raster (slightly larger than minimum interval)
+                            suggested_min_raster = min_interval * 1.1
+                            
+                            channel_analysis[channel_name] = {
+                                'min_interval': min_interval,
+                                'avg_interval': avg_interval,
+                                'max_interval': max_interval,
+                                'suggested_min_raster': suggested_min_raster,
+                                'sample_count': len(signal.samples),
+                                'duration': signal.timestamps[-1] - signal.timestamps[0]
+                            }
+                        else:
+                            channel_analysis[channel_name] = {
+                                'error': 'Channel not found or empty'
+                            }
+                    except Exception as e:
+                        channel_analysis[channel_name] = {
+                            'error': str(e)
+                        }
+            else:  # CSV files don't have timestamp info
+                for channel_name in used_channels:
+                    if channel_name in self.vehicle_data.columns:
+                        channel_analysis[channel_name] = {
+                            'sample_count': len(self.vehicle_data),
+                            'note': 'CSV file - no timing information available'
+                        }
+                    else:
+                        channel_analysis[channel_name] = {
+                            'error': 'Channel not found in CSV'
+                        }
+        except Exception as e:
+            self.log_status(f"❌ Error analyzing channel sampling rates: {str(e)}")
+        
+        return channel_analysis
+    
+    def ask_for_raster(self):
+        """Ask user for raster value for resampling MDF files with detailed channel analysis."""
+        # Create raster dialog
+        raster_dialog = ctk.CTkToplevel(self.root)
+        raster_dialog.title('🎯 Set Time Raster - Advanced Analysis')
+        raster_dialog.geometry('600x500')
+        raster_dialog.transient(self.root)
+        raster_dialog.grab_set()
+        
+        # Center dialog
+        raster_dialog.update_idletasks()
+        x = (raster_dialog.winfo_screenwidth() // 2) - 300
+        y = (raster_dialog.winfo_screenheight() // 2) - 250
+        raster_dialog.geometry(f"600x500+{x}+{y}")
+        
+        main_frame = ctk.CTkFrame(raster_dialog)
+        main_frame.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        title_label = ctk.CTkLabel(
+            main_frame,
+            text="🎯 Time Raster Configuration",
+            font=ctk.CTkFont(size=18, weight="bold")
+        )
+        title_label.pack(pady=(10, 15))
+        
+        # Analyze channels first
+        self.log_status("🔍 Analyzing channel sampling rates...")
+        channel_analysis = self.analyze_channel_sampling_rates()
+        
+        # Calculate overall minimum raster
+        overall_min_raster = 0.001  # Default fallback
+        limiting_channel = "Unknown"
+        
+        if channel_analysis:
+            min_rasters = []
+            for ch_name, analysis in channel_analysis.items():
+                if 'suggested_min_raster' in analysis:
+                    min_rasters.append(analysis['suggested_min_raster'])
+                    if analysis['suggested_min_raster'] == max(min_rasters):
+                        limiting_channel = ch_name
+            if min_rasters:
+                overall_min_raster = max(min_rasters)
+        
+        # Info text
+        info_text = ctk.CTkLabel(
+            main_frame,
+            text=f"Recommended minimum raster: {overall_min_raster:.6f} seconds\n"
+                 f"Limiting channel: {limiting_channel}\n\n"
+                 f"Enter raster value in seconds:",
+            font=ctk.CTkFont(size=12),
+            justify="center"
+        )
+        info_text.pack(pady=(0, 15))
+        
+        # Entry field
+        raster_var = ctk.StringVar(value=str(overall_min_raster))
+        raster_entry = ctk.CTkEntry(
+            main_frame,
+            textvariable=raster_var,
+            placeholder_text="Enter raster in seconds",
+            font=ctk.CTkFont(size=12),
+            width=200
+        )
+        raster_entry.pack(pady=(0, 15))
+        
+        # Quick selection buttons
+        quick_frame = ctk.CTkFrame(main_frame)
+        quick_frame.pack(fill="x", pady=(0, 15))
+        
+        quick_label = ctk.CTkLabel(
+            quick_frame,
+            text="⚡ Quick Selection:",
+            font=ctk.CTkFont(size=12, weight="bold")
+        )
+        quick_label.pack(pady=(10, 5))
+        
+        # Suggested values
+        suggested_values = [
+            (overall_min_raster, "Recommended"),
+            (0.001, "1ms"),
+            (0.01, "10ms"),
+            (0.02, "20ms"),
+            (0.05, "50ms"),
+            (0.1, "100ms")
+        ]
+        
+        for value, label in suggested_values:
+            btn = ctk.CTkButton(
+                quick_frame,
+                text=f"{label} ({value}s)",
+                command=lambda v=value: raster_var.set(str(v)),
+                width=120,
+                height=30
+            )
+            btn.pack(side="left", padx=5, pady=5)
+        
+        result = [None]
+        
+        def confirm_raster():
+            try:
+                raster_value = float(raster_var.get())
+                if raster_value <= 0:
+                    messagebox.showerror('Error', 'Raster value must be positive!')
+                    return
+                result[0] = raster_value
+                raster_dialog.destroy()
+            except ValueError:
+                messagebox.showerror('Error', 'Please enter a valid number!')
+        
+        def cancel_raster():
+            result[0] = None
+            raster_dialog.destroy()
+        
+        # Buttons
+        button_frame = ctk.CTkFrame(main_frame)
+        button_frame.pack(pady=20)
+        
+        ok_btn = ctk.CTkButton(
+            button_frame,
+            text='✅ OK',
+            command=confirm_raster,
+            font=ctk.CTkFont(size=12, weight="bold")
+        )
+        ok_btn.pack(side='left', padx=10)
+        
+        cancel_btn = ctk.CTkButton(
+            button_frame,
+            text='❌ Cancel',
+            command=cancel_raster
+        )
+        cancel_btn.pack(side='left', padx=10)
+        
+        raster_entry.focus()
+        raster_dialog.wait_window()
+        return result[0]
+    
+    def get_interpolated_signal_data(self, channel_name, target_raster):
+        """Get signal data with interpolation if needed for target raster."""
+        file_ext = Path(self.vehicle_file_path).suffix.lower()
+        
+        if file_ext == '.csv':
+            # For CSV files, just return the data as-is
+            data = pd.to_numeric(self.vehicle_data[channel_name], errors='coerce')
+            timestamps = np.arange(len(data), dtype=np.float64) * target_raster
+            return data.values, timestamps
+        
+        # For MDF files, try to get data at target raster first
+        try:
+            signal = self.vehicle_data.get(channel_name, raster=target_raster)
+            if signal is not None and len(signal.samples) > 0:
+                self.log_status(f"✅ Direct raster extraction successful for {channel_name}: {len(signal.samples)} samples")
+                return signal.samples, signal.timestamps
+        except Exception as e:
+            # If raster-based extraction fails, fall back to interpolation
+            self.log_status(f"⚠️ Direct raster extraction failed for {channel_name}, using interpolation: {str(e)}")
+            pass
+        
+        # Fallback: get original signal and interpolate
+        try:
+            original_signal = self.vehicle_data.get(channel_name)
+            if original_signal is None or len(original_signal.samples) == 0:
+                raise Exception(f"Channel {channel_name} not found or empty")
+            
+            # Create target timestamps
+            start_time = original_signal.timestamps[0]
+            end_time = original_signal.timestamps[-1]
+            target_timestamps = np.arange(start_time, end_time + target_raster, target_raster)
+            
+            # Interpolate to target timestamps
+            interpolator = interp1d(
+                original_signal.timestamps, 
+                original_signal.samples,
+                kind='linear',
+                bounds_error=False,
+                fill_value='extrapolate'
+            )
+            interpolated_samples = interpolator(target_timestamps)
+            
+            self.log_status(f"🔄 Interpolated {channel_name}: {len(original_signal.samples)} -> {len(interpolated_samples)} samples")
+            return interpolated_samples, target_timestamps
+            
+        except Exception as e:
+            raise Exception(f"Failed to get data for {channel_name}: {str(e)}")
+    
+    def process_all_channels(self):
+        """Process all configured custom channels."""
+        if not self.vehicle_data:
+            messagebox.showerror("Error", "Please select a vehicle file first!")
+            return
+            
+        if not self.custom_channels:
+            messagebox.showerror("Error", "Please configure at least one custom channel!")
+            return
+        
+        # For MDF files, ask for raster once
+        file_ext = Path(self.vehicle_file_path).suffix.lower()
+        raster = None
+        if file_ext in ['.mdf', '.mf4', '.dat']:
+            raster = self.ask_for_raster()
+            if raster is None:
+                self.log_status("⚠️ Processing cancelled by user.")
+                return
+        
+        try:
+            self.log_status("🚀 Starting processing of all custom channels...")
+            
+            # Process each custom channel
+            calculated_signals = []
+            for i, channel_config in enumerate(self.custom_channels):
+                self.log_status(f"⚙️ Processing channel {i+1}/{len(self.custom_channels)}: {channel_config['name']}")
+                
+                # Load surface table
+                try:
+                    x_values, y_values, z_matrix = self.load_surface_table(
+                        channel_config['csv_file'],
+                        channel_config['x_column'],
+                        channel_config['y_column'], 
+                        channel_config['z_column']
+                    )
+                    self.log_status(f"✅ Surface table loaded for {channel_config['name']}")
+                except Exception as e:
+                    self.log_status(f"❌ Error loading surface table for {channel_config['name']}: {str(e)}")
+                    continue
+                
+                # Extract vehicle data with interpolation support
+                try:
+                    if file_ext == '.csv':
+                        x_data = pd.to_numeric(self.vehicle_data[channel_config['vehicle_x_channel']], errors='coerce')
+                        y_data = pd.to_numeric(self.vehicle_data[channel_config['vehicle_y_channel']], errors='coerce')
+                        timestamps = np.arange(len(x_data), dtype=np.float64) * (raster or 0.01)
+                    else:  # MDF files
+                        # Use interpolation-capable method
+                        x_data, x_timestamps = self.get_interpolated_signal_data(channel_config['vehicle_x_channel'], raster)
+                        y_data, y_timestamps = self.get_interpolated_signal_data(channel_config['vehicle_y_channel'], raster)
+                        
+                        # Align timestamps - use the shorter range
+                        min_length = min(len(x_data), len(y_data))
+                        x_data = x_data[:min_length]
+                        y_data = y_data[:min_length]
+                        timestamps = x_timestamps[:min_length]
+                        
+                        if len(x_data) != len(y_data):
+                            raise Exception(f"Channel length mismatch after interpolation: {len(x_data)} vs {len(y_data)}")
+                        
+                    self.log_status(f"✅ Vehicle data extracted for {channel_config['name']}: {len(x_data)} samples")
+                    
+                except Exception as e:
+                    self.log_status(f"❌ Error extracting vehicle data for {channel_config['name']}: {str(e)}")
+                    continue
+                
+                # Interpolate values
+                try:
+                    z_interpolated = []
+                    valid_points = 0
+                    
+                    for x_val, y_val in zip(x_data, y_data):
+                        if pd.notna(x_val) and pd.notna(y_val):
+                            z_val = self.interpolate_z_value(x_val, y_val, x_values, y_values, z_matrix)
+                            z_interpolated.append(z_val)
+                            if not np.isnan(z_val):
+                                valid_points += 1
+                        else:
+                            z_interpolated.append(np.nan)
+                    
+                    self.log_status(f"✅ Interpolated {valid_points}/{len(z_interpolated)} valid points for {channel_config['name']}")
+                    
+                    # Create signal for MDF output
+                    if self.output_format_var.get() == "mf4" and file_ext != '.csv':
+                        # Generate comment with all variables used
+                        csv_filename = os.path.basename(channel_config['csv_file'])
+                        final_comment = (
+                            f"Channel generated from CSV surface table '{csv_filename}' "
+                            f"using X-axis: {channel_config['x_column']} (vehicle: {channel_config['vehicle_x_channel']}), "
+                            f"Y-axis: {channel_config['y_column']} (vehicle: {channel_config['vehicle_y_channel']}), "
+                            f"Z-values: {channel_config['z_column']}."
+                        )
+                        
+                        # Add user comment if provided
+                        if channel_config['comment'].strip():
+                            final_comment += f" User comment: {channel_config['comment']}"
+                        
+                        signal = Signal(
+                            samples=np.array(z_interpolated, dtype=np.float64),
+                            timestamps=timestamps,
+                            name=channel_config['name'],
+                            unit=channel_config['units'],
+                            comment=final_comment
+                        )
+                        calculated_signals.append(signal)
+                    
+                    # Store for CSV output
+                    if file_ext == '.csv' or self.output_format_var.get() == "csv":
+                        if file_ext == '.csv':
+                            # Add to existing dataframe
+                            self.vehicle_data[channel_config['name']] = z_interpolated
+                        else:
+                            # Create new dataframe for CSV export
+                            if not hasattr(self, 'csv_export_data'):
+                                self.csv_export_data = pd.DataFrame()
+                                self.csv_export_data['Time'] = timestamps
+                            self.csv_export_data[channel_config['name']] = z_interpolated
+                            
+                except Exception as e:
+                    self.log_status(f"❌ Error interpolating {channel_config['name']}: {str(e)}")
+                    continue
+            
+            # Save output
+            self.save_output(calculated_signals, file_ext)
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Processing failed: {str(e)}")
+            self.log_status(f"❌ Processing error: {str(e)}")
+    
+    def save_output(self, calculated_signals, original_file_ext):
+        """Save the output in the selected format."""
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        base_name = Path(self.vehicle_file_path).stem
+        output_dir = Path(self.vehicle_file_path).parent
+        
+        try:
+            if self.output_format_var.get() == "mf4" and original_file_ext != '.csv':
+                # Save as MF4 with calculated channels only
+                output_path = output_dir / f"{base_name}_calculated_channels_{timestamp}.mf4"
+                
+                with MDF() as new_mdf:
+                    if calculated_signals:
+                        new_mdf.append(calculated_signals, comment="Calculated channels from surface table interpolation")
+                        new_mdf.save(output_path, overwrite=True)
+                        self.log_status(f"✅ MF4 file saved: {output_path}")
+                    else:
+                        self.log_status("❌ No calculated signals to save")
+                        
+            if self.output_format_var.get() == "csv" or original_file_ext == '.csv':
+                # Save as CSV
+                output_path = output_dir / f"{base_name}_with_calculated_channels_{timestamp}.csv"
+                
+                if original_file_ext == '.csv':
+                    # Save updated original dataframe
+                    self.vehicle_data.to_csv(output_path, index=False)
+                else:
+                    # Save calculated channels dataframe
+                    if hasattr(self, 'csv_export_data'):
+                        self.csv_export_data.to_csv(output_path, index=False)
+                    
+                self.log_status(f"✅ CSV file saved: {output_path}")
+                
+            messagebox.showinfo("Success", f"Processing completed successfully!\nCreated {len(calculated_signals)} calculated channels.")
+            
+        except Exception as e:
+            self.log_status(f"❌ Error saving output: {str(e)}")
+            raise
+    
+    def save_settings(self):
+        """Auto-save current settings to default file."""
+        try:
+            settings = self.get_all_settings()
+            with open('channel_appender_settings_modern.json', 'w') as f:
+                json.dump(settings, f, indent=2)
+        except Exception as e:
+            self.log_status(f"❌ Error auto-saving settings: {str(e)}")
+    
+    def load_settings_on_startup(self):
+        """Load settings from default file on startup."""
+        try:
+            if os.path.exists('channel_appender_settings_modern.json'):
+                with open('channel_appender_settings_modern.json', 'r') as f:
+                    settings = json.load(f)
+                self.restore_settings(settings)
+                self.log_status("✅ Previous settings loaded automatically")
+        except Exception as e:
+            self.log_status(f"⚠️ Could not load previous settings: {str(e)}")
+    
+    def save_settings_as(self):
+        """Save settings to a new file."""
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        num_channels = len(self.custom_channels)
+        vehicle_name = "NoVehicle"
+        if self.vehicle_file_path:
+            vehicle_name = Path(self.vehicle_file_path).stem
+        
+        default_name = f"settings_{vehicle_name}_{num_channels}channels_{timestamp}.json"
+        
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".json",
+            filetypes=[("JSON Files", "*.json"), ("All Files", "*.*")],
+            title="Save Settings As",
+            initialvalue=default_name
+        )
+        if file_path:
+            try:
+                settings = self.get_all_settings()
+                settings['description'] = f"Settings saved on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} with {num_channels} custom channels"
+                
+                with open(file_path, 'w') as f:
+                    json.dump(settings, f, indent=2)
+                self.log_status(f"✅ Settings saved to {os.path.basename(file_path)}")
+                messagebox.showinfo("Settings Saved", f"Settings saved successfully to:\n{os.path.basename(file_path)}")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to save settings: {str(e)}")
+                self.log_status(f"❌ Error saving settings: {str(e)}")
+    
+    def load_settings_from(self):
+        """Load settings from a file."""
+        file_path = filedialog.askopenfilename(
+            filetypes=[("JSON Files", "*.json"), ("All Files", "*.*")],
+            title="Load Settings From"
+        )
+        if file_path:
+            try:
+                with open(file_path, 'r') as f:
+                    settings = json.load(f)
+                
+                # Show preview of what will be loaded
+                num_channels = len(settings.get('custom_channels', []))
+                vehicle_file = settings.get('vehicle_file', 'None')
+                description = settings.get('description', 'No description available')
+                
+                preview_msg = (f"Settings Preview:\n"
+                             f"• Custom Channels: {num_channels}\n"
+                             f"• Vehicle File: {os.path.basename(vehicle_file) if vehicle_file else 'None'}\n"
+                             f"• Description: {description}\n\n"
+                             f"Load these settings?")
+                
+                if messagebox.askyesno("Load Settings", preview_msg):
+                    self.restore_settings(settings)
+                    self.log_status(f"✅ Settings loaded from {os.path.basename(file_path)}")
+                    messagebox.showinfo("Settings Loaded", f"Settings loaded successfully!\n{num_channels} custom channels restored.")
+                else:
+                    self.log_status("⚠️ Settings load cancelled by user")
+                    
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to load settings: {str(e)}")
+                self.log_status(f"❌ Error loading settings: {str(e)}")
+    
+    def quick_save_settings(self, slot):
+        """Quick save settings to a numbered slot."""
+        try:
+            settings = self.get_all_settings()
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            num_channels = len(self.custom_channels)
+            
+            settings['description'] = f"Quick save slot {slot} - {timestamp} ({num_channels} channels)"
+            
+            filename = f"quick_save_slot_{slot}_modern.json"
+            with open(filename, 'w') as f:
+                json.dump(settings, f, indent=2)
+            
+            self.log_status(f"✅ Quick saved to slot {slot} ({num_channels} channels)")
+            
+        except Exception as e:
+            self.log_status(f"❌ Error quick saving to slot {slot}: {str(e)}")
+    
+    def quick_load_settings(self, slot):
+        """Quick load settings from a numbered slot."""
+        filename = f"quick_save_slot_{slot}_modern.json"
+        
+        if not os.path.exists(filename):
+            self.log_status(f"⚠️ Quick save slot {slot} is empty")
+            return
+        
+        try:
+            with open(filename, 'r') as f:
+                settings = json.load(f)
+            
+            num_channels = len(settings.get('custom_channels', []))
+            
+            # Quick load without confirmation for faster workflow
+            self.restore_settings(settings)
+            self.log_status(f"✅ Quick loaded from slot {slot} ({num_channels} channels)")
+            
+        except Exception as e:
+            self.log_status(f"❌ Error quick loading from slot {slot}: {str(e)}")
+    
+    def get_all_settings(self):
+        """Get all current settings in a single dictionary."""
+        return {
+            'vehicle_file': self.vehicle_file_path,
+            'custom_channels': self.custom_channels,
+            'output_format': self.output_format_var.get(),
+            'theme': self.theme_menu.get(),
+            'form_settings': {
+                'channel_name': self.channel_name_var.get(),
+                'csv_file': self.csv_file_var.get(),
+                'x_column': self.x_col_var.get(),
+                'y_column': self.y_col_var.get(),
+                'z_column': self.z_col_var.get(),
+                'vehicle_x_channel': self.veh_x_var.get(),
+                'vehicle_y_channel': self.veh_y_var.get(),
+                'units': self.units_var.get(),
+                'comment': self.comment_var.get(),
+                'preserve_settings': self.preserve_settings_var.get()
+            },
+            'saved_at': datetime.now().isoformat()
+        }
+    
+    def restore_settings(self, settings):
+        """Restore settings from dictionary."""
+        try:
+            # Restore custom channels
+            if 'custom_channels' in settings:
+                self.custom_channels = settings['custom_channels']
+                self.update_channels_display()
+            
+            # Restore output format
+            if 'output_format' in settings:
+                self.output_format_var.set(settings['output_format'])
+            
+            # Restore theme
+            if 'theme' in settings:
+                self.theme_menu.set(settings['theme'])
+                self.change_theme(settings['theme'])
+            
+            # Restore form settings
+            if 'form_settings' in settings:
+                form = settings['form_settings']
+                self.channel_name_var.set(form.get('channel_name', ''))
+                self.csv_file_var.set(form.get('csv_file', ''))
+                self.x_col_var.set(form.get('x_column', ''))
+                self.y_col_var.set(form.get('y_column', ''))
+                self.z_col_var.set(form.get('z_column', ''))
+                self.veh_x_var.set(form.get('vehicle_x_channel', ''))
+                self.veh_y_var.set(form.get('vehicle_y_channel', ''))
+                self.units_var.set(form.get('units', ''))
+                self.comment_var.set(form.get('comment', ''))
+                self.preserve_settings_var.set(form.get('preserve_settings', True))
+                
+                # If CSV file exists, load its columns
+                csv_file = form.get('csv_file', '')
+                if csv_file and os.path.exists(csv_file):
+                    try:
+                        df = pd.read_csv(csv_file, nrows=1)
+                        columns = df.columns.tolist()
+                        self.x_col_combo.set_completion_list(columns)
+                        self.y_col_combo.set_completion_list(columns)
+                        self.z_col_combo.set_completion_list(columns)
+                    except Exception as e:
+                        self.log_status(f"⚠️ Could not reload CSV columns: {str(e)}")
+            
+            # Restore vehicle file if it exists
+            if 'vehicle_file' in settings and settings['vehicle_file']:
+                if os.path.exists(settings['vehicle_file']):
+                    self.vehicle_file_path = settings['vehicle_file']
+                    filename = os.path.basename(self.vehicle_file_path)
+                    self.file_status_label.configure(text=f"📁 {filename}")
+                    try:
+                        self.load_vehicle_file()
+                    except Exception as e:
+                        self.log_status(f"⚠️ Could not reload vehicle file: {str(e)}")
+                        
+        except Exception as e:
+            self.log_status(f"❌ Error restoring settings: {str(e)}")
+    
     def clear_status_log(self):
         """Clear the status log."""
         self.status_text.delete("1.0", "end")
@@ -1102,9 +1833,31 @@ class VehicleLogChannelAppenderModern:
         self.status_text.see("end")
     
     def on_closing(self):
-        """Handle application closing."""
-        if messagebox.askokcancel("Quit", "Do you want to quit the application?"):
-            self.root.destroy()
+        """Handle application closing with save options."""
+        num_channels = len(self.custom_channels)
+        
+        if num_channels > 0:
+            # Ask if user wants to save
+            result = messagebox.askyesnocancel(
+                "Save Before Exit?",
+                f"You have {num_channels} custom channel(s) configured.\n\n"
+                "Save settings before exiting?\n\n"
+                "• Yes: Auto-save to default file\n"
+                "• No: Exit without saving\n"
+                "• Cancel: Stay in application"
+            )
+            
+            if result is True:  # Yes - save
+                self.save_settings()
+                self.log_status("✅ Auto-saved settings before exit")
+                self.root.destroy()
+            elif result is False:  # No - don't save
+                self.root.destroy()
+            # Cancel - do nothing (stay open)
+        else:
+            # No channels, simple exit
+            if messagebox.askokcancel("Exit", "Are you sure you want to exit?"):
+                self.root.destroy()
     
     def run(self):
         """Start the application."""

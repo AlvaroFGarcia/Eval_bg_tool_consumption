@@ -121,7 +121,7 @@ class VehicleLogChannelAppenderModern:
         # Initialize main window
         self.root = ctk.CTk()
         self.root.title("🚗 Vehicle Log Channel Appender - Modern Edition")
-        self.root.geometry("1400x900")
+        self.root.geometry("1200x700")
         
         # Set window icon and properties
         self.setup_window_properties()
@@ -170,8 +170,8 @@ class VehicleLogChannelAppenderModern:
         """Configure window properties for Windows compatibility."""
         # Center window on screen
         self.root.update_idletasks()
-        width = 1400
-        height = 900
+        width = 1200
+        height = 700
         x = (self.root.winfo_screenwidth() // 2) - (width // 2)
         y = (self.root.winfo_screenheight() // 2) - (height // 2)
         self.root.geometry(f"{width}x{height}+{x}+{y}")
@@ -1291,7 +1291,7 @@ class VehicleLogChannelAppenderModern:
             width=100,
             height=35
         )
-                 cancel_btn.pack(side='left', padx=5)
+        cancel_btn.pack(side='left', padx=5)
     
     def apply_advanced_filters(self):
         """Apply advanced filters to channels display."""
@@ -1581,10 +1581,10 @@ class VehicleLogChannelAppenderModern:
             }
             
                          # Replace the channel in the list
-             self.custom_channels[channel_index] = updated_channel
+            self.custom_channels[channel_index] = updated_channel
              
              # Update display with current filters
-             self.apply_combined_filters()
+            self.apply_combined_filters()
             
             # Auto-save settings
             self.save_settings()
@@ -1883,10 +1883,10 @@ class VehicleLogChannelAppenderModern:
                     imported_count += 1
                 
                                  # Update display with current filters
-                 self.apply_combined_filters()
+                self.apply_combined_filters()
                  
                  # Auto-save settings
-                 self.save_settings()
+                self.save_settings()
                 
                 # Show results
                 result_msg = f"✅ Successfully imported {imported_count} channel(s)"

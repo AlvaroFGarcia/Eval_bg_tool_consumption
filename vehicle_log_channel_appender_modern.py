@@ -663,15 +663,6 @@ class VehicleLogChannelAppenderModern:
         )
         self.clear_all_filters_btn.pack(side="right", padx=5)
         
-        self.setup_filters_btn = ctk.CTkButton(
-            search_controls,
-            text="🎛️ Legacy Filters",
-            command=self.setup_filters,
-            width=100,
-            height=28
-        )
-        self.setup_filters_btn.pack(side="right", padx=5)
-        
         # Create proper table display using treeview
         # Configure treeview style with explicit theme
         import tkinter.ttk as ttk
@@ -755,12 +746,16 @@ class VehicleLogChannelAppenderModern:
         v_scrollbar.grid(row=0, column=1, sticky="ns")
         h_scrollbar.grid(row=1, column=0, sticky="ew")
         
-        # Table management buttons
+        # Table management buttons - using two rows to prevent disappearing on resize
         controls_frame = ctk.CTkFrame(table_frame)
         controls_frame.pack(fill="x", padx=20, pady=(0, 15))
         
+        # First row - main actions
+        controls_row1 = ctk.CTkFrame(controls_frame)
+        controls_row1.pack(fill="x", padx=5, pady=(5, 2))
+        
         self.edit_channel_btn = ctk.CTkButton(
-            controls_frame,
+            controls_row1,
             text="✏️ Edit Selected",
             command=self.edit_selected_channel,
             width=120,
@@ -769,7 +764,7 @@ class VehicleLogChannelAppenderModern:
         self.edit_channel_btn.pack(side="left", padx=5)
         
         self.delete_channel_btn = ctk.CTkButton(
-            controls_frame,
+            controls_row1,
             text="🗑️ Delete Selected",
             command=self.delete_selected_channel,
             width=120,
@@ -778,7 +773,7 @@ class VehicleLogChannelAppenderModern:
         self.delete_channel_btn.pack(side="left", padx=5)
         
         self.duplicate_channel_btn = ctk.CTkButton(
-            controls_frame,
+            controls_row1,
             text="📋 Duplicate",
             command=self.duplicate_selected_channel,
             width=100,
@@ -787,7 +782,7 @@ class VehicleLogChannelAppenderModern:
         self.duplicate_channel_btn.pack(side="left", padx=5)
         
         self.clear_all_btn = ctk.CTkButton(
-            controls_frame,
+            controls_row1,
             text="🧹 Clear All",
             command=self.clear_all_channels,
             width=100,
@@ -795,23 +790,27 @@ class VehicleLogChannelAppenderModern:
         )
         self.clear_all_btn.pack(side="left", padx=5)
         
+        # Second row - import/export (always visible even on small windows)
+        controls_row2 = ctk.CTkFrame(controls_frame)
+        controls_row2.pack(fill="x", padx=5, pady=(2, 5))
+        
         self.import_config_btn = ctk.CTkButton(
-            controls_frame,
+            controls_row2,
             text="📥 Import Config",
             command=self.import_channel_config,
             width=120,
             height=30
         )
-        self.import_config_btn.pack(side="right", padx=5)
+        self.import_config_btn.pack(side="left", padx=5)
         
         self.export_config_btn = ctk.CTkButton(
-            controls_frame,
+            controls_row2,
             text="📤 Export Config",
             command=self.export_channel_config,
             width=120,
             height=30
         )
-        self.export_config_btn.pack(side="right", padx=5)
+        self.export_config_btn.pack(side="left", padx=5)
     
     def setup_status_log_tab(self):
         """Setup the status log tab."""
@@ -1295,33 +1294,39 @@ class VehicleLogChannelAppenderModern:
             messagebox.showinfo("No Data", f"No data available for column '{column_name}' to filter.")
             return
         
-        # Create filter dialog
+        # Create filter dialog with improved sizing
         filter_dialog = ctk.CTkToplevel(self.root)
         filter_dialog.title(f'🔽 Filter: {column_name}')
-        filter_dialog.geometry('400x600')
+        filter_dialog.geometry('450x700')
         filter_dialog.transient(self.root)
         filter_dialog.grab_set()
-        filter_dialog.resizable(False, True)
+        filter_dialog.resizable(True, True)
+        filter_dialog.minsize(400, 600)  # Set minimum size to ensure buttons are visible
         
         # Center dialog
         filter_dialog.update_idletasks()
-        x = (filter_dialog.winfo_screenwidth() // 2) - 200
-        y = (filter_dialog.winfo_screenheight() // 2) - 300
-        filter_dialog.geometry(f"400x600+{x}+{y}")
+        x = (filter_dialog.winfo_screenwidth() // 2) - 225
+        y = (filter_dialog.winfo_screenheight() // 2) - 350
+        filter_dialog.geometry(f"450x700+{x}+{y}")
         
-        main_frame = ctk.CTkFrame(filter_dialog)
-        main_frame.pack(fill="both", expand=True, padx=15, pady=15)
+        # Create main scrollable frame
+        main_scroll_frame = ctk.CTkScrollableFrame(filter_dialog)
+        main_scroll_frame.pack(fill="both", expand=True, padx=15, pady=(15, 5))
+        
+        # Fixed button frame at bottom (always visible)
+        button_frame_fixed = ctk.CTkFrame(filter_dialog)
+        button_frame_fixed.pack(fill="x", side="bottom", padx=15, pady=(5, 15))
         
         # Title
         title_label = ctk.CTkLabel(
-            main_frame,
+            main_scroll_frame,
             text=f"🔽 Filter Column: {column_name}",
             font=ctk.CTkFont(size=16, weight="bold")
         )
         title_label.pack(pady=(5, 15))
         
         # Filter type selection
-        filter_type_frame = ctk.CTkFrame(main_frame)
+        filter_type_frame = ctk.CTkFrame(main_scroll_frame)
         filter_type_frame.pack(fill="x", pady=(0, 10))
         
         ctk.CTkLabel(filter_type_frame, text="Filter Type:", 
@@ -1348,7 +1353,7 @@ class VehicleLogChannelAppenderModern:
         exclude_radio.pack(anchor="w", padx=20, pady=(2, 10))
         
         # Custom text filter section
-        text_filter_frame = ctk.CTkFrame(main_frame)
+        text_filter_frame = ctk.CTkFrame(main_scroll_frame)
         text_filter_frame.pack(fill="x", pady=(0, 10))
         
         ctk.CTkLabel(text_filter_frame, text="🔍 Text Filter:", 
@@ -1420,7 +1425,7 @@ class VehicleLogChannelAppenderModern:
         apply_text_btn.pack(padx=10, pady=(0, 10))
         
         # Values selection area
-        values_frame = ctk.CTkFrame(main_frame)
+        values_frame = ctk.CTkFrame(main_scroll_frame)
         values_frame.pack(fill="both", expand=True, pady=(0, 10))
         
         ctk.CTkLabel(values_frame, text="Values:", 
@@ -1488,10 +1493,7 @@ class VehicleLogChannelAppenderModern:
             )
             checkbox.pack(anchor="w", padx=5, pady=2)
         
-        # Action buttons
-        button_frame = ctk.CTkFrame(main_frame)
-        button_frame.pack(pady=10)
-        
+        # Action buttons (moved to fixed bottom frame for always visible access)
         def apply_filter():
             # Get selected values
             selected_values = {value for value, var in value_vars.items() if var.get()}
@@ -1524,33 +1526,34 @@ class VehicleLogChannelAppenderModern:
         def cancel_filter():
             filter_dialog.destroy()
         
+        # Create buttons in the fixed bottom frame (always visible)
         apply_btn = ctk.CTkButton(
-            button_frame,
-            text='✅ Apply Filter',
+            button_frame_fixed,
+            text='✅ Apply Filters',
             command=apply_filter,
             font=ctk.CTkFont(size=12, weight="bold"),
-            width=100,
-            height=30
+            width=120,
+            height=35
         )
         apply_btn.pack(side='left', padx=5)
         
         clear_btn = ctk.CTkButton(
-            button_frame,
-            text='🧹 Clear Filter',
+            button_frame_fixed,
+            text='🧹 Clear Filters',
             command=clear_filter,
-            width=100,
-            height=30
+            width=120,
+            height=35
         )
         clear_btn.pack(side='left', padx=5)
         
         cancel_btn = ctk.CTkButton(
-            button_frame,
+            button_frame_fixed,
             text='❌ Cancel',
             command=cancel_filter,
-            width=80,
-            height=30
+            width=100,
+            height=35
         )
-        cancel_btn.pack(side='left', padx=5)
+        cancel_btn.pack(side='right', padx=5)
     
     def get_channel_column_value(self, channel, column_name):
         """Get the value for a specific column from a channel dictionary."""

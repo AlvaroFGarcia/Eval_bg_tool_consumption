@@ -1,0 +1,42 @@
+{
+  "vehicle_file": "C:/Users/BRM1511/Desktop/Aquisicoes_Drive_Session_363BSG/2025-07-17_YS82471__363_BSG_NP__4_Rodagem_Pedro.dat",
+  "custom_channels": [
+    {
+      "name": "BG_SPK",
+      "csv_file": "C:/Users/BRM1511/OneDrive - FEV Group GmbH/Atividades T3/Drive Session P24 Consumo_Scavenging/Big Grids/40716 _480542_A03_E22R92_8567_9.40716_BIG GRID OFFNOMINAL IAT40_TAIRC60_ECT100_DATA.csv",
+      "x_column": "RPM",
+      "y_column": "ETASP",
+      "z_column": "AVANCE_2",
+      "vehicle_x_channel": "RPMX1\\XETK:1",
+      "vehicle_y_channel": "ETASP\\XETK:1",
+      "units": "",
+      "comment": ""
+    },
+    {
+      "name": "ANG_IVO_BG",
+      "csv_file": "C:/Users/BRM1511/OneDrive - FEV Group GmbH/Atividades T3/Drive Session P24 Consumo_Scavenging/Big Grids/40716 _480542_A03_E22R92_8567_9.40716_BIG GRID OFFNOMINAL IAT40_TAIRC60_ECT100_DATA.csv",
+      "x_column": "RPM",
+      "y_column": "ETASP",
+      "z_column": "ANGVVAHB",
+      "vehicle_x_channel": "RPMX1\\XETK:1",
+      "vehicle_y_channel": "ETASP\\XETK:1",
+      "units": "",
+      "comment": ""
+    }
+  ],
+  "output_format": "mf4",
+  "theme": "Light",
+  "form_settings": {
+    "channel_name": "ANG_IVO_BG",
+    "csv_file": "C:/Users/BRM1511/OneDrive - FEV Group GmbH/Atividades T3/Drive Session P24 Consumo_Scavenging/Big Grids/40716 _480542_A03_E22R92_8567_9.40716_BIG GRID OFFNOMINAL IAT40_TAIRC60_ECT100_DATA.csv",
+    "x_column": "RPM",
+    "y_column": "ETASP",
+    "z_column": "ANGVVAHB",
+    "vehicle_x_channel": "RPMX1\\XETK:1",
+    "vehicle_y_channel": "ETASP\\XETK:1",
+    "units": "",
+    "comment": "",
+    "preserve_settings": true
+  },
+  "saved_at": "2025-08-04T17:11:44.547522"
+}

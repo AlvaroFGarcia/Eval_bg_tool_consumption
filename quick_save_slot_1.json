@@ -1,0 +1,63 @@
+{
+  "vehicle_file": "C:/Users/BRM1511/Desktop/Aquisicoes_Drive_Session_363BSG/2025-07-17_YS82471__363_BSG_NP__5_Rodagem_Alex.dat",
+  "custom_channels": [
+    {
+      "name": "BG_SPK",
+      "csv_file": "C:/Users/BRM1511/OneDrive - FEV Group GmbH/Atividades T3/Drive Session P24 Consumo_Scavenging/Big Grids/40716 _480542_A03_E22R92_8567_9.40716_BIG GRID OFFNOMINAL IAT40_TAIRC60_ECT100_DATA.csv",
+      "x_column": "RPM",
+      "y_column": "ETASP",
+      "z_column": "AVANCE_1",
+      "vehicle_x_channel": "RPMX1",
+      "vehicle_y_channel": "ETASP",
+      "units": "",
+      "comment": "sempre soube"
+    },
+    {
+      "name": "Ang_ivo",
+      "csv_file": "C:/Users/BRM1511/OneDrive - FEV Group GmbH/Atividades T3/Drive Session P24 Consumo_Scavenging/Big Grids/40716 _480542_A03_E22R92_8567_9.40716_BIG GRID OFFNOMINAL IAT40_TAIRC60_ECT100_DATA.csv",
+      "x_column": "RPM",
+      "y_column": "ETASP",
+      "z_column": "AVANCE_1",
+      "vehicle_x_channel": "RPMX1",
+      "vehicle_y_channel": "ETASP",
+      "units": "",
+      "comment": ""
+    },
+    {
+      "name": "Ang_ivo",
+      "csv_file": "C:/Users/BRM1511/OneDrive - FEV Group GmbH/Atividades T3/Drive Session P24 Consumo_Scavenging/Big Grids/40716 _480542_A03_E22R92_8567_9.40716_BIG GRID OFFNOMINAL IAT40_TAIRC60_ECT100_DATA.csv",
+      "x_column": "RPM",
+      "y_column": "ETASP",
+      "z_column": "AVANCE_1",
+      "vehicle_x_channel": "RPMX1",
+      "vehicle_y_channel": "ETASP",
+      "units": "",
+      "comment": ""
+    },
+    {
+      "name": "axdx",
+      "csv_file": "C:/Users/BRM1511/OneDrive - FEV Group GmbH/Atividades T3/Drive Session P24 Consumo_Scavenging/Big Grids/40716 _480542_A03_E22R92_8567_9.40716_BIG GRID OFFNOMINAL IAT40_TAIRC60_ECT100_DATA.csv",
+      "x_column": "A_I05_2",
+      "y_column": "A_I10",
+      "z_column": "A_I10_1",
+      "vehicle_x_channel": "A2D_AC_PRESS_12_BIT\\XETK:1",
+      "vehicle_y_channel": "ABIL_SCV_PHYS_COND\\XETK:1",
+      "units": "",
+      "comment": ""
+    }
+  ],
+  "output_format": "mf4",
+  "last_channel_settings": {
+    "name": "axdx",
+    "csv_file": "C:/Users/BRM1511/OneDrive - FEV Group GmbH/Atividades T3/Drive Session P24 Consumo_Scavenging/Big Grids/40716 _480542_A03_E22R92_8567_9.40716_BIG GRID OFFNOMINAL IAT40_TAIRC60_ECT100_DATA.csv",
+    "x_column": "A_I05_2",
+    "y_column": "A_I10",
+    "z_column": "A_I10_1",
+    "vehicle_x_channel": "A2D_AC_PRESS_12_BIT\\XETK:1",
+    "vehicle_y_channel": "ABIL_SCV_PHYS_COND\\XETK:1",
+    "units": "",
+    "comment": ""
+  },
+  "last_updated": "2025-08-04T13:44:23.176537",
+  "description": "Quick save slot 1 - 2025-08-04 13:44:23 (4 channels)"
+}

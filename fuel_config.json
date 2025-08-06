@@ -9,5 +9,36 @@
     "etasp_min": 0.212,
     "etasp_max": 2.315,
     "etasp_intervals": 16
+  },
+  "rpm_channel": "RPMX1",
+  "etasp_channel": "ETASP",
+  "z_param_channel": "CIGN_DANG_FDBK_V_[0]",
+  "raster_value": 0.02,
+  "filters": [
+    {
+      "channel": "ANG_IVC",
+      "condition": "within range",
+      "min": 400.0,
+      "max": 560.0
+    }
+  ],
+  "surface_viewer_comparison_colors": {
+    "min_color": "#ff0000",
+    "max_color": "#00ff00",
+    "medium_color": "#ffffff",
+    "color_bias": 1.0
+  },
+  "concentration_overlay": {
+    "enabled": true,
+    "transparency": 0.92,
+    "blur_enabled": true,
+    "min_color": "#ffffff",
+    "max_color": "#0064ff",
+    "mode": "gradient",
+    "scatter_size": 5.0,
+    "scatter_density": 1.0,
+    "intensity": 1.53,
+    "gamma": 0.82,
+    "show_metrics": true
   }
 }

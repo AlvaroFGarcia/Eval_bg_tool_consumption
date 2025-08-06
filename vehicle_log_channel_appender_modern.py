@@ -655,23 +655,42 @@ class VehicleLogChannelAppenderModern:
         self.setup_filters_btn.pack(side="right", padx=5)
         
         # Create proper table display using treeview
-        # Configure treeview style
+        # Configure treeview style with explicit theme
         import tkinter.ttk as ttk
         style = ttk.Style()
+        
+        # Force a theme that works well with dark mode
+        try:
+            style.theme_use('clam')  # Use clam theme as base
+        except:
+            pass  # If clam is not available, use default
+            
+        # Configure the treeview with high contrast colors
         style.configure("Modern.Treeview", 
-                       background="#212121",
-                       foreground="white",
-                       fieldbackground="#212121",
-                       font=("Segoe UI", 10))
+                       background="#2b2b2b",
+                       foreground="#ffffff",
+                       fieldbackground="#2b2b2b",
+                       font=("Segoe UI", 10),
+                       rowheight=25,
+                       borderwidth=0)
+        
+        # Configure headers with very high contrast
         style.configure("Modern.Treeview.Heading", 
-                       background="#2a2a2a",
+                       background="#666666",
                        foreground="#ffffff",
                        relief="raised",
                        borderwidth=1,
-                       font=("Segoe UI", 10, "bold"))
+                       font=("Segoe UI", 10, "bold"),
+                       anchor="center",
+                       focuscolor="none")
+        
+        # Configure hover and selection states
         style.map("Modern.Treeview.Heading",
-                 background=[('active', '#3a3a3a')],
+                 background=[('active', '#777777')],
                  foreground=[('active', '#ffffff')])
+        style.map("Modern.Treeview",
+                 background=[('selected', '#0d7377')],
+                 foreground=[('selected', '#ffffff')])
         
         # Table container with proper scrollbars
         tree_container = ctk.CTkFrame(table_frame)
@@ -690,13 +709,13 @@ class VehicleLogChannelAppenderModern:
                                          height=12,
                                          style="Modern.Treeview")
         
-        # Configure columns
+        # Configure columns with explicit settings
         column_widths = {"Name": 120, "CSV File": 150, "X Col": 80, "Y Col": 80, "Z Col": 80, 
                         "Veh X": 120, "Veh Y": 120, "Units": 60, "Comment": 150}
         
         for col in columns:
-            self.channels_tree.heading(col, text=col)
-            self.channels_tree.column(col, width=column_widths.get(col, 100), minwidth=60)
+            self.channels_tree.heading(col, text=col, anchor="center")
+            self.channels_tree.column(col, width=column_widths.get(col, 100), minwidth=60, anchor="center")
         
         # Scrollbars
         v_scrollbar = ttk.Scrollbar(tree_container, orient="vertical", command=self.channels_tree.yview)
@@ -1646,15 +1665,15 @@ class VehicleLogChannelAppenderModern:
         
         # Suggested values with color coding
         suggested_values = [
-            (overall_min_raster, "Recommended", "#28a745"),
-            (0.001, "1ms", "#17a2b8" if 0.001 >= overall_min_raster else "#ffc107"),
-            (0.01, "10ms", "#17a2b8" if 0.01 >= overall_min_raster else "#ffc107"),
-            (0.02, "20ms", "#17a2b8" if 0.02 >= overall_min_raster else "#ffc107"),
-            (0.05, "50ms", "#17a2b8" if 0.05 >= overall_min_raster else "#ffc107"),
-            (0.1, "100ms", "#17a2b8" if 0.1 >= overall_min_raster else "#ffc107")
+            (overall_min_raster, "Recommended", "#28a745", "white"),
+            (0.001, "1ms", "#17a2b8" if 0.001 >= overall_min_raster else "#ffc107", "white" if 0.001 >= overall_min_raster else "black"),
+            (0.01, "10ms", "#17a2b8" if 0.01 >= overall_min_raster else "#ffc107", "white" if 0.01 >= overall_min_raster else "black"),
+            (0.02, "20ms", "#17a2b8" if 0.02 >= overall_min_raster else "#ffc107", "white" if 0.02 >= overall_min_raster else "black"),
+            (0.05, "50ms", "#17a2b8" if 0.05 >= overall_min_raster else "#ffc107", "white" if 0.05 >= overall_min_raster else "black"),
+            (0.1, "100ms", "#17a2b8" if 0.1 >= overall_min_raster else "#ffc107", "white" if 0.1 >= overall_min_raster else "black")
         ]
         
-        for value, label, color in suggested_values:
+        for value, label, bg_color, text_color in suggested_values:
             btn = ctk.CTkButton(
                 button_container,
                 text=f"{label}\n({value}s)",
@@ -1662,7 +1681,8 @@ class VehicleLogChannelAppenderModern:
                 width=80,
                 height=40,
                 font=ctk.CTkFont(size=10),
-                fg_color=color
+                fg_color=bg_color,
+                text_color=text_color
             )
             btn.pack(side="left", padx=3, pady=5)
         

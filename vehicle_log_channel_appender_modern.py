@@ -615,7 +615,16 @@ class VehicleLogChannelAppenderModern:
             text="📋 Configured Custom Channels",
             font=ctk.CTkFont(size=16, weight="bold")
         )
-        table_title.pack(pady=(15, 10))
+        table_title.pack(pady=(15, 5))
+        
+        # Excel-like filter info
+        filter_info = ctk.CTkLabel(
+            table_frame,
+            text="💡 Click on column headers (🔽) for Excel-like filtering with include/exclude options",
+            font=ctk.CTkFont(size=10),
+            text_color="gray"
+        )
+        filter_info.pack(pady=(0, 10))
         
         # Search and filter controls
         search_frame = ctk.CTkFrame(table_frame)
@@ -645,9 +654,18 @@ class VehicleLogChannelAppenderModern:
         self.clear_search_btn.pack(side="left", padx=5)
         
         # Filter buttons
+        self.clear_all_filters_btn = ctk.CTkButton(
+            search_controls,
+            text="🧹 Clear All Filters",
+            command=self.clear_all_excel_filters,
+            width=120,
+            height=28
+        )
+        self.clear_all_filters_btn.pack(side="right", padx=5)
+        
         self.setup_filters_btn = ctk.CTkButton(
             search_controls,
-            text="🎛️ Setup Filters",
+            text="🎛️ Legacy Filters",
             command=self.setup_filters,
             width=100,
             height=28
@@ -709,13 +727,22 @@ class VehicleLogChannelAppenderModern:
                                          height=12,
                                          style="Modern.Treeview")
         
-        # Configure columns with explicit settings
+        # Configure columns with explicit settings and filter icons
         column_widths = {"Name": 120, "CSV File": 150, "X Col": 80, "Y Col": 80, "Z Col": 80, 
                         "Veh X": 120, "Veh Y": 120, "Units": 60, "Comment": 150}
         
+        # Initialize Excel-like filters
+        self.excel_filters = {}
+        self.column_unique_values = {}
+        
         for col in columns:
-            self.channels_tree.heading(col, text=col, anchor="center")
+            # Add filter icon to column header
+            header_text = f"{col} 🔽"
+            self.channels_tree.heading(col, text=header_text, anchor="center", 
+                                     command=lambda c=col: self.show_excel_filter(c))
             self.channels_tree.column(col, width=column_widths.get(col, 100), minwidth=60, anchor="center")
+            # Initialize filter state for this column
+            self.excel_filters[col] = {"enabled": True, "selected_values": set(), "filter_type": "include"}
         
         # Scrollbars
         v_scrollbar = ttk.Scrollbar(tree_container, orient="vertical", command=self.channels_tree.yview)
@@ -1013,25 +1040,9 @@ class VehicleLogChannelAppenderModern:
         self.comment_var.set("")
     
     def update_channels_display(self):
-        """Update the channels display with current channels."""
-        # Clear existing items
-        for item in self.channels_tree.get_children():
-            self.channels_tree.delete(item)
-        
-        # Populate with current channels
-        for channel in self.custom_channels:
-            values = [
-                channel.get('name', ''),
-                os.path.basename(channel.get('csv_file', '')),
-                channel.get('x_column', ''),
-                channel.get('y_column', ''),
-                channel.get('z_column', ''),
-                channel.get('vehicle_x_channel', ''),
-                channel.get('vehicle_y_channel', ''),
-                channel.get('units', ''),
-                channel.get('comment', '')
-            ]
-            self.channels_tree.insert("", "end", values=values)
+        """Update the channels display with current channels using Excel-like filtering."""
+        # Use the Excel filtering system to update display
+        self.apply_excel_filters()
     
     def clear_all_channels(self):
         """Clear all custom channels after confirmation."""
@@ -1059,81 +1070,9 @@ class VehicleLogChannelAppenderModern:
         self.apply_combined_filters()
     
     def apply_combined_filters(self):
-        """Apply both search and advanced filters to channels display."""
-        search_term = self.search_var.get().lower()
-        
-        # Clear existing items
-        for item in self.channels_tree.get_children():
-            self.channels_tree.delete(item)
-        
-        # Filter and display channels
-        for channel in self.custom_channels:
-            show_channel = True
-            
-            # Apply search filter first
-            if search_term:
-                channel_text = ' '.join([
-                    channel.get('name', ''),
-                    os.path.basename(channel.get('csv_file', '')),
-                    channel.get('x_column', ''),
-                    channel.get('y_column', ''),
-                    channel.get('z_column', ''),
-                    channel.get('vehicle_x_channel', ''),
-                    channel.get('vehicle_y_channel', ''),
-                    channel.get('units', ''),
-                    channel.get('comment', '')
-                ]).lower()
-                
-                if search_term not in channel_text:
-                    show_channel = False
-            
-            # Apply advanced filters if they exist and are active
-            if show_channel and hasattr(self, 'active_filters') and any(self.active_filters.values()):
-                # Name filter
-                if self.active_filters.get('name'):
-                    if self.active_filters['name'].lower() not in channel.get('name', '').lower():
-                        show_channel = False
-                
-                # CSV file filter
-                if show_channel and self.active_filters.get('csv'):
-                    csv_basename = os.path.basename(channel.get('csv_file', ''))
-                    if self.active_filters['csv'].lower() not in csv_basename.lower():
-                        show_channel = False
-                
-                # Vehicle X channel filter
-                if show_channel and self.active_filters.get('veh_x'):
-                    if self.active_filters['veh_x'].lower() not in channel.get('vehicle_x_channel', '').lower():
-                        show_channel = False
-                
-                # Vehicle Y channel filter
-                if show_channel and self.active_filters.get('veh_y'):
-                    if self.active_filters['veh_y'].lower() not in channel.get('vehicle_y_channel', '').lower():
-                        show_channel = False
-                
-                # Units filter
-                if show_channel and self.active_filters.get('units'):
-                    if self.active_filters['units'].lower() not in channel.get('units', '').lower():
-                        show_channel = False
-                
-                # Comment filter
-                if show_channel and self.active_filters.get('comment'):
-                    if self.active_filters['comment'].lower() not in channel.get('comment', '').lower():
-                        show_channel = False
-            
-            # Show channel if it passes all filters
-            if show_channel:
-                values = [
-                    channel.get('name', ''),
-                    os.path.basename(channel.get('csv_file', '')),
-                    channel.get('x_column', ''),
-                    channel.get('y_column', ''),
-                    channel.get('z_column', ''),
-                    channel.get('vehicle_x_channel', ''),
-                    channel.get('vehicle_y_channel', ''),
-                    channel.get('units', ''),
-                    channel.get('comment', '')
-                ]
-                self.channels_tree.insert("", "end", values=values)
+        """Apply both search and advanced filters to channels display - now uses Excel-like filtering."""
+        # Use the new Excel filtering system which handles all filter types
+        self.apply_excel_filters()
     
     def clear_search(self):
         """Clear search field and reapply filters."""
@@ -1314,6 +1253,472 @@ class VehicleLogChannelAppenderModern:
             self.log_status(f"🎛️ Applied {', '.join(filter_info)}: Showing {visible_count}/{total_count} channels")
         else:
             self.log_status(f"🎛️ All filters cleared: Showing all {total_count} channels")
+    
+    def get_unique_values_for_column(self, column_name):
+        """Get all unique values for a specific column from the channels data."""
+        values = set()
+        column_index = ["Name", "CSV File", "X Col", "Y Col", "Z Col", "Veh X", "Veh Y", "Units", "Comment"].index(column_name)
+        
+        for channel in self.custom_channels:
+            if column_name == "Name":
+                value = channel.get('name', '')
+            elif column_name == "CSV File":
+                value = os.path.basename(channel.get('csv_file', ''))
+            elif column_name == "X Col":
+                value = channel.get('x_column', '')
+            elif column_name == "Y Col":
+                value = channel.get('y_column', '')
+            elif column_name == "Z Col":
+                value = channel.get('z_column', '')
+            elif column_name == "Veh X":
+                value = channel.get('vehicle_x_channel', '')
+            elif column_name == "Veh Y":
+                value = channel.get('vehicle_y_channel', '')
+            elif column_name == "Units":
+                value = channel.get('units', '')
+            elif column_name == "Comment":
+                value = channel.get('comment', '')
+            else:
+                value = ''
+            
+            if value.strip():  # Only add non-empty values
+                values.add(value.strip())
+        
+        return sorted(list(values), key=str.lower)
+    
+    def show_excel_filter(self, column_name):
+        """Show Excel-like filter dialog for a specific column."""
+        # Get unique values for this column
+        unique_values = self.get_unique_values_for_column(column_name)
+        
+        if not unique_values:
+            messagebox.showinfo("No Data", f"No data available for column '{column_name}' to filter.")
+            return
+        
+        # Create filter dialog
+        filter_dialog = ctk.CTkToplevel(self.root)
+        filter_dialog.title(f'🔽 Filter: {column_name}')
+        filter_dialog.geometry('400x600')
+        filter_dialog.transient(self.root)
+        filter_dialog.grab_set()
+        filter_dialog.resizable(False, True)
+        
+        # Center dialog
+        filter_dialog.update_idletasks()
+        x = (filter_dialog.winfo_screenwidth() // 2) - 200
+        y = (filter_dialog.winfo_screenheight() // 2) - 300
+        filter_dialog.geometry(f"400x600+{x}+{y}")
+        
+        main_frame = ctk.CTkFrame(filter_dialog)
+        main_frame.pack(fill="both", expand=True, padx=15, pady=15)
+        
+        # Title
+        title_label = ctk.CTkLabel(
+            main_frame,
+            text=f"🔽 Filter Column: {column_name}",
+            font=ctk.CTkFont(size=16, weight="bold")
+        )
+        title_label.pack(pady=(5, 15))
+        
+        # Filter type selection
+        filter_type_frame = ctk.CTkFrame(main_frame)
+        filter_type_frame.pack(fill="x", pady=(0, 10))
+        
+        ctk.CTkLabel(filter_type_frame, text="Filter Type:", 
+                    font=ctk.CTkFont(size=12, weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
+        
+        filter_type_var = ctk.StringVar(value=self.excel_filters[column_name]["filter_type"])
+        
+        include_radio = ctk.CTkRadioButton(
+            filter_type_frame,
+            text="✅ Include selected values (show only these)",
+            variable=filter_type_var,
+            value="include",
+            font=ctk.CTkFont(size=11)
+        )
+        include_radio.pack(anchor="w", padx=20, pady=2)
+        
+        exclude_radio = ctk.CTkRadioButton(
+            filter_type_frame,
+            text="❌ Exclude selected values (hide these)",
+            variable=filter_type_var,
+            value="exclude",
+            font=ctk.CTkFont(size=11)
+        )
+        exclude_radio.pack(anchor="w", padx=20, pady=(2, 10))
+        
+        # Custom text filter section
+        text_filter_frame = ctk.CTkFrame(main_frame)
+        text_filter_frame.pack(fill="x", pady=(0, 10))
+        
+        ctk.CTkLabel(text_filter_frame, text="🔍 Text Filter:", 
+                    font=ctk.CTkFont(size=12, weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
+        
+        text_filter_type_var = ctk.StringVar(value="contains")
+        text_filter_value_var = ctk.StringVar()
+        
+        # Text filter type dropdown
+        text_type_frame = ctk.CTkFrame(text_filter_frame)
+        text_type_frame.pack(fill="x", padx=10, pady=(0, 5))
+        
+        text_type_menu = ctk.CTkOptionMenu(
+            text_type_frame,
+            variable=text_filter_type_var,
+            values=["contains", "starts with", "ends with", "equals", "not contains"],
+            font=ctk.CTkFont(size=10),
+            width=120
+        )
+        text_type_menu.pack(side="left", padx=(0, 10))
+        
+        text_filter_entry = ctk.CTkEntry(
+            text_type_frame,
+            textvariable=text_filter_value_var,
+            placeholder_text="Enter text to filter...",
+            width=200
+        )
+        text_filter_entry.pack(side="left", fill="x", expand=True)
+        
+        # Apply text filter button
+        def apply_text_filter():
+            filter_text = text_filter_value_var.get().strip().lower()
+            filter_type = text_filter_type_var.get()
+            
+            if not filter_text:
+                return
+            
+            # Clear current selections
+            for var in value_vars.values():
+                var.set(False)
+            
+            # Select values based on text filter
+            for value in unique_values:
+                value_lower = value.lower()
+                should_select = False
+                
+                if filter_type == "contains" and filter_text in value_lower:
+                    should_select = True
+                elif filter_type == "starts with" and value_lower.startswith(filter_text):
+                    should_select = True
+                elif filter_type == "ends with" and value_lower.endswith(filter_text):
+                    should_select = True
+                elif filter_type == "equals" and value_lower == filter_text:
+                    should_select = True
+                elif filter_type == "not contains" and filter_text not in value_lower:
+                    should_select = True
+                
+                if should_select and value in value_vars:
+                    value_vars[value].set(True)
+        
+        apply_text_btn = ctk.CTkButton(
+            text_filter_frame,
+            text="Apply Text Filter",
+            command=apply_text_filter,
+            height=25,
+            width=120,
+            font=ctk.CTkFont(size=10)
+        )
+        apply_text_btn.pack(padx=10, pady=(0, 10))
+        
+        # Values selection area
+        values_frame = ctk.CTkFrame(main_frame)
+        values_frame.pack(fill="both", expand=True, pady=(0, 10))
+        
+        ctk.CTkLabel(values_frame, text="Values:", 
+                    font=ctk.CTkFont(size=12, weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
+        
+        # Select All / Clear All buttons
+        selection_frame = ctk.CTkFrame(values_frame)
+        selection_frame.pack(fill="x", padx=10, pady=(0, 10))
+        
+        def select_all():
+            for var in value_vars.values():
+                var.set(True)
+                
+        def clear_all():
+            for var in value_vars.values():
+                var.set(False)
+        
+        select_all_btn = ctk.CTkButton(
+            selection_frame,
+            text="✅ Select All",
+            command=select_all,
+            height=25,
+            width=100,
+            font=ctk.CTkFont(size=10)
+        )
+        select_all_btn.pack(side="left", padx=(0, 10))
+        
+        clear_all_btn = ctk.CTkButton(
+            selection_frame,
+            text="❌ Clear All",
+            command=clear_all,
+            height=25,
+            width=100,
+            font=ctk.CTkFont(size=10)
+        )
+        clear_all_btn.pack(side="left")
+        
+        # Scrollable frame for values
+        values_scroll = ctk.CTkScrollableFrame(values_frame, height=300)
+        values_scroll.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        
+        # Create checkboxes for each unique value
+        value_vars = {}
+        current_selected = self.excel_filters[column_name]["selected_values"]
+        
+        for value in unique_values:
+            var = ctk.BooleanVar()
+            # Set initial state based on current filter
+            if not current_selected:  # If no filter is set, select all by default
+                var.set(True)
+            else:
+                var.set(value in current_selected)
+            
+            value_vars[value] = var
+            
+            # Create checkbox with value count
+            count = sum(1 for channel in self.custom_channels 
+                       if self.get_channel_column_value(channel, column_name) == value)
+            
+            checkbox = ctk.CTkCheckBox(
+                values_scroll,
+                text=f"{value} ({count})",
+                variable=var,
+                font=ctk.CTkFont(size=10)
+            )
+            checkbox.pack(anchor="w", padx=5, pady=2)
+        
+        # Action buttons
+        button_frame = ctk.CTkFrame(main_frame)
+        button_frame.pack(pady=10)
+        
+        def apply_filter():
+            # Get selected values
+            selected_values = {value for value, var in value_vars.items() if var.get()}
+            
+            # Update filter state
+            self.excel_filters[column_name]["selected_values"] = selected_values
+            self.excel_filters[column_name]["filter_type"] = filter_type_var.get()
+            self.excel_filters[column_name]["enabled"] = len(selected_values) < len(unique_values)
+            
+            # Apply all Excel filters
+            self.apply_excel_filters()
+            
+            filter_dialog.destroy()
+            
+            # Log the filter action
+            filter_type_text = "Include" if filter_type_var.get() == "include" else "Exclude"
+            self.log_status(f"🔽 {filter_type_text} filter applied to '{column_name}': {len(selected_values)}/{len(unique_values)} values selected")
+        
+        def clear_filter():
+            # Clear filter for this column
+            self.excel_filters[column_name]["selected_values"] = set()
+            self.excel_filters[column_name]["enabled"] = False
+            
+            # Apply all Excel filters
+            self.apply_excel_filters()
+            
+            filter_dialog.destroy()
+            self.log_status(f"🧹 Filter cleared for column '{column_name}'")
+        
+        def cancel_filter():
+            filter_dialog.destroy()
+        
+        apply_btn = ctk.CTkButton(
+            button_frame,
+            text='✅ Apply Filter',
+            command=apply_filter,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            width=100,
+            height=30
+        )
+        apply_btn.pack(side='left', padx=5)
+        
+        clear_btn = ctk.CTkButton(
+            button_frame,
+            text='🧹 Clear Filter',
+            command=clear_filter,
+            width=100,
+            height=30
+        )
+        clear_btn.pack(side='left', padx=5)
+        
+        cancel_btn = ctk.CTkButton(
+            button_frame,
+            text='❌ Cancel',
+            command=cancel_filter,
+            width=80,
+            height=30
+        )
+        cancel_btn.pack(side='left', padx=5)
+    
+    def get_channel_column_value(self, channel, column_name):
+        """Get the value for a specific column from a channel dictionary."""
+        if column_name == "Name":
+            return channel.get('name', '')
+        elif column_name == "CSV File":
+            return os.path.basename(channel.get('csv_file', ''))
+        elif column_name == "X Col":
+            return channel.get('x_column', '')
+        elif column_name == "Y Col":
+            return channel.get('y_column', '')
+        elif column_name == "Z Col":
+            return channel.get('z_column', '')
+        elif column_name == "Veh X":
+            return channel.get('vehicle_x_channel', '')
+        elif column_name == "Veh Y":
+            return channel.get('vehicle_y_channel', '')
+        elif column_name == "Units":
+            return channel.get('units', '')
+        elif column_name == "Comment":
+            return channel.get('comment', '')
+        else:
+            return ''
+    
+    def apply_excel_filters(self):
+        """Apply Excel-like column filters to the channels display."""
+        search_term = self.search_var.get().lower()
+        
+        # Clear existing items
+        for item in self.channels_tree.get_children():
+            self.channels_tree.delete(item)
+        
+        # Filter and display channels
+        filtered_count = 0
+        for channel in self.custom_channels:
+            show_channel = True
+            
+            # Apply search filter first
+            if search_term:
+                channel_text = ' '.join([
+                    channel.get('name', ''),
+                    os.path.basename(channel.get('csv_file', '')),
+                    channel.get('x_column', ''),
+                    channel.get('y_column', ''),
+                    channel.get('z_column', ''),
+                    channel.get('vehicle_x_channel', ''),
+                    channel.get('vehicle_y_channel', ''),
+                    channel.get('units', ''),
+                    channel.get('comment', '')
+                ]).lower()
+                
+                if search_term not in channel_text:
+                    show_channel = False
+            
+            # Apply Excel column filters
+            if show_channel:
+                for column_name, filter_config in self.excel_filters.items():
+                    if not filter_config["enabled"] or not filter_config["selected_values"]:
+                        continue
+                    
+                    channel_value = self.get_channel_column_value(channel, column_name)
+                    filter_type = filter_config["filter_type"]
+                    selected_values = filter_config["selected_values"]
+                    
+                    if filter_type == "include":
+                        # Show only if value is in selected values
+                        if channel_value not in selected_values:
+                            show_channel = False
+                            break
+                    elif filter_type == "exclude":
+                        # Hide if value is in selected values
+                        if channel_value in selected_values:
+                            show_channel = False
+                            break
+            
+            # Apply legacy advanced filters if they exist and are active
+            if show_channel and hasattr(self, 'active_filters') and any(self.active_filters.values()):
+                # Name filter
+                if self.active_filters.get('name'):
+                    if self.active_filters['name'].lower() not in channel.get('name', '').lower():
+                        show_channel = False
+                
+                # CSV file filter
+                if show_channel and self.active_filters.get('csv'):
+                    csv_basename = os.path.basename(channel.get('csv_file', ''))
+                    if self.active_filters['csv'].lower() not in csv_basename.lower():
+                        show_channel = False
+                
+                # Vehicle X channel filter
+                if show_channel and self.active_filters.get('veh_x'):
+                    if self.active_filters['veh_x'].lower() not in channel.get('vehicle_x_channel', '').lower():
+                        show_channel = False
+                
+                # Vehicle Y channel filter
+                if show_channel and self.active_filters.get('veh_y'):
+                    if self.active_filters['veh_y'].lower() not in channel.get('vehicle_y_channel', '').lower():
+                        show_channel = False
+                
+                # Units filter
+                if show_channel and self.active_filters.get('units'):
+                    if self.active_filters['units'].lower() not in channel.get('units', '').lower():
+                        show_channel = False
+                
+                # Comment filter
+                if show_channel and self.active_filters.get('comment'):
+                    if self.active_filters['comment'].lower() not in channel.get('comment', '').lower():
+                        show_channel = False
+            
+            # Show channel if it passes all filters
+            if show_channel:
+                values = [
+                    channel.get('name', ''),
+                    os.path.basename(channel.get('csv_file', '')),
+                    channel.get('x_column', ''),
+                    channel.get('y_column', ''),
+                    channel.get('z_column', ''),
+                    channel.get('vehicle_x_channel', ''),
+                    channel.get('vehicle_y_channel', ''),
+                    channel.get('units', ''),
+                    channel.get('comment', '')
+                ]
+                self.channels_tree.insert("", "end", values=values)
+                filtered_count += 1
+        
+        # Update column headers to show filter status
+        self.update_column_headers()
+        
+        # Log filter results
+        total_count = len(self.custom_channels)
+        active_excel_filters = sum(1 for f in self.excel_filters.values() if f["enabled"])
+        search_active = bool(search_term)
+        legacy_filters_active = hasattr(self, 'active_filters') and any(self.active_filters.values())
+        
+        filter_info = []
+        if active_excel_filters > 0:
+            filter_info.append(f"{active_excel_filters} column filter(s)")
+        if legacy_filters_active:
+            filter_info.append("legacy filters")
+        if search_active:
+            filter_info.append(f"search: '{search_term}'")
+        
+        if filter_info:
+            self.log_status(f"🔽 Applied {', '.join(filter_info)}: Showing {filtered_count}/{total_count} channels")
+        else:
+            self.log_status(f"📊 Showing all {total_count} channels")
+    
+    def update_column_headers(self):
+        """Update column headers to show filter status."""
+        columns = ["Name", "CSV File", "X Col", "Y Col", "Z Col", "Veh X", "Veh Y", "Units", "Comment"]
+        
+        for col in columns:
+            if self.excel_filters[col]["enabled"] and self.excel_filters[col]["selected_values"]:
+                # Show filtered icon
+                header_text = f"{col} 🔽✅"
+            else:
+                # Show normal filter icon
+                header_text = f"{col} 🔽"
+            
+            self.channels_tree.heading(col, text=header_text)
+    
+    def clear_all_excel_filters(self):
+        """Clear all Excel-like column filters."""
+        for column_name in self.excel_filters:
+            self.excel_filters[column_name]["enabled"] = False
+            self.excel_filters[column_name]["selected_values"] = set()
+        
+        self.apply_excel_filters()
+        self.log_status("🧹 All column filters cleared")
     
     def edit_selected_channel(self):
         """Edit the selected channel in a separate window while keeping it in the table."""

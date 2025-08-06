@@ -354,7 +354,7 @@ class VehicleLogChannelAppenderModern:
         """Setup the main content area with tabs."""
         # Main content frame
         self.main_frame = ctk.CTkFrame(self.root)
-        self.main_frame.grid(row=0, column=1, sticky="nsew", padx=(10, 20), pady=20)
+        self.main_frame.grid(row=0, column=1, sticky="nsew", padx=(2, 20), pady=20)
         self.root.grid_columnconfigure(1, weight=1)
         
         # Create tabview
@@ -664,9 +664,14 @@ class VehicleLogChannelAppenderModern:
                        fieldbackground="#212121",
                        font=("Segoe UI", 10))
         style.configure("Modern.Treeview.Heading", 
-                       background="#1f538d",
-                       foreground="white",
+                       background="#2a2a2a",
+                       foreground="#ffffff",
+                       relief="raised",
+                       borderwidth=1,
                        font=("Segoe UI", 10, "bold"))
+        style.map("Modern.Treeview.Heading",
+                 background=[('active', '#3a3a3a')],
+                 foreground=[('active', '#ffffff')])
         
         # Table container with proper scrollbars
         tree_container = ctk.CTkFrame(table_frame)
@@ -1406,15 +1411,17 @@ class VehicleLogChannelAppenderModern:
         # Create raster dialog
         raster_dialog = ctk.CTkToplevel(self.root)
         raster_dialog.title('🎯 Set Time Raster - Advanced Analysis')
-        raster_dialog.geometry('800x700')
+        raster_dialog.geometry('900x800')
         raster_dialog.transient(self.root)
         raster_dialog.grab_set()
+        raster_dialog.resizable(True, True)
+        raster_dialog.minsize(800, 650)
         
         # Center dialog
         raster_dialog.update_idletasks()
-        x = (raster_dialog.winfo_screenwidth() // 2) - 400
-        y = (raster_dialog.winfo_screenheight() // 2) - 350
-        raster_dialog.geometry(f"800x700+{x}+{y}")
+        x = (raster_dialog.winfo_screenwidth() // 2) - 450
+        y = (raster_dialog.winfo_screenheight() // 2) - 400
+        raster_dialog.geometry(f"900x800+{x}+{y}")
         
         main_frame = ctk.CTkFrame(raster_dialog)
         main_frame.pack(fill="both", expand=True, padx=20, pady=20)
@@ -1478,20 +1485,54 @@ class VehicleLogChannelAppenderModern:
         )
         limiting_label.pack(padx=15, pady=(0, 10))
         
-        # Channel analysis table
+        # Channel analysis table - collapsible
         analysis_frame = ctk.CTkFrame(main_frame)
-        analysis_frame.pack(fill="both", expand=True, pady=(0, 15))
+        analysis_frame.pack(fill="x", pady=(0, 15))
+        
+        # Toggle button for analysis table
+        analysis_header = ctk.CTkFrame(analysis_frame)
+        analysis_header.pack(fill="x", padx=15, pady=(10, 5))
         
         analysis_title = ctk.CTkLabel(
-            analysis_frame,
+            analysis_header,
             text="📊 Per-Channel Analysis",
             font=ctk.CTkFont(size=14, weight="bold")
         )
-        analysis_title.pack(pady=(10, 5))
+        analysis_title.pack(side="left")
+        
+        # Toggle button
+        analysis_expanded = ctk.BooleanVar(value=False)
+        toggle_analysis_btn = ctk.CTkButton(
+            analysis_header,
+            text="▼ Show Details",
+            command=lambda: toggle_analysis_table(),
+            width=120,
+            height=25,
+            font=ctk.CTkFont(size=11)
+        )
+        toggle_analysis_btn.pack(side="right")
+        
+        # Analysis table container (initially hidden)
+        analysis_table_container = ctk.CTkFrame(analysis_frame)
+        # Don't pack initially - will be shown when button is clicked
+        
+        def toggle_analysis_table():
+            if analysis_expanded.get():
+                # Hide table
+                analysis_table_container.pack_forget()
+                toggle_analysis_btn.configure(text="▼ Show Details")
+                analysis_expanded.set(False)
+                analysis_frame.configure(height=50)
+            else:
+                # Show table
+                analysis_table_container.pack(fill="both", expand=True, padx=15, pady=(0, 15))
+                toggle_analysis_btn.configure(text="▲ Hide Details")
+                analysis_expanded.set(True)
+                analysis_frame.pack_configure(fill="both", expand=True)
         
         # Create treeview for channel analysis
         import tkinter.ttk as ttk
-        analysis_tree_frame = ctk.CTkFrame(analysis_frame)
+        analysis_tree_frame = ctk.CTkFrame(analysis_table_container)
         analysis_tree_frame.pack(fill="both", expand=True, padx=15, pady=(0, 15))
         
         columns = ("Channel", "Min Interval", "Avg Interval", "Suggested Min Raster", "Samples", "Status")
@@ -1529,10 +1570,10 @@ class VehicleLogChannelAppenderModern:
                     status
                 ), tags=("good",))
         
-        # Configure row colors
-        analysis_tree.tag_configure("error", background="#ffcccc")
-        analysis_tree.tag_configure("warning", background="#fff3cd")
-        analysis_tree.tag_configure("good", background="#d4edda")
+        # Configure row colors with better contrast
+        analysis_tree.tag_configure("error", background="#ffcccc", foreground="#000000")
+        analysis_tree.tag_configure("warning", background="#ffeaa7", foreground="#2d3436")  
+        analysis_tree.tag_configure("good", background="#d4edda", foreground="#000000")
         
         # Add scrollbar
         tree_scroll = ttk.Scrollbar(analysis_tree_frame, orient="vertical", command=analysis_tree.yview)

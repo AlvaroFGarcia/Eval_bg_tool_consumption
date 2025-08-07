@@ -20,7 +20,7 @@ import threading
 from typing import List, Dict, Optional
 
 # Import modular components
-from ui_components import ModernAutocompleteCombobox, ModernProgressDialog
+from ui_components import ModernAutocompleteCombobox, ModernProgressDialog, AdvancedRasterDialog, ExcelFilterDialog
 from data_processing import DataProcessor, ChannelAnalyzer
 from file_management import FileManager, OutputGenerator
 from settings_management import SettingsManager, ConfigurationManager
@@ -974,97 +974,33 @@ class VehicleLogChannelAppenderModular:
             messagebox.showinfo("No Data", f"No data available for column '{column_name}' to filter.")
             return
         
-        # Create filter dialog - simplified version for modular approach
-        filter_dialog = ctk.CTkToplevel(self.root)
-        filter_dialog.title(f'🔽 Filter: {column_name}')
-        filter_dialog.geometry('450x600')
-        filter_dialog.transient(self.root)
-        filter_dialog.grab_set()
-        
-        # Center dialog
-        x = (filter_dialog.winfo_screenwidth() // 2) - 225
-        y = (filter_dialog.winfo_screenheight() // 2) - 300
-        filter_dialog.geometry(f"450x600+{x}+{y}")
-        
-        main_frame = ctk.CTkScrollableFrame(filter_dialog)
-        main_frame.pack(fill="both", expand=True, padx=15, pady=15)
-        
-        # Title
-        title_label = ctk.CTkLabel(
-            main_frame,
-            text=f"🔽 Filter Column: {column_name}",
-            font=ctk.CTkFont(size=16, weight="bold")
-        )
-        title_label.pack(pady=(5, 15))
-        
-        # Filter type selection
-        filter_type_var = ctk.StringVar(value="include")
-        
-        include_radio = ctk.CTkRadioButton(
-            main_frame,
-            text="✅ Include selected values",
-            variable=filter_type_var,
-            value="include"
-        )
-        include_radio.pack(anchor="w", pady=2)
-        
-        exclude_radio = ctk.CTkRadioButton(
-            main_frame,
-            text="❌ Exclude selected values",
-            variable=filter_type_var,
-            value="exclude"
-        )
-        exclude_radio.pack(anchor="w", pady=(2, 15))
-        
-        # Values selection
-        ctk.CTkLabel(main_frame, text="Values:", 
-                    font=ctk.CTkFont(size=12, weight="bold")).pack(anchor="w", pady=(0, 5))
-        
-        # Create checkboxes for each unique value
-        value_vars = {}
+        # Get current filter configuration
         current_filter = self.channel_filter.excel_filters[column_name]
         
-        for value in unique_values:
-            var = ctk.BooleanVar()
-            if not current_filter["selected_values"]:
-                var.set(True)  # Select all by default
+        # Create and show advanced Excel filter dialog
+        filter_dialog = ExcelFilterDialog(self.root, column_name, unique_values, current_filter, self.log_status)
+        result = filter_dialog.show()
+        
+        if result is not None:
+            # Apply the filter result
+            if result["enabled"]:
+                self.channel_filter.set_excel_filter(
+                    column_name, 
+                    result["selected_values"], 
+                    result["filter_type"]
+                )
             else:
-                var.set(value in current_filter["selected_values"])
+                self.channel_filter.clear_excel_filter(column_name)
             
-            value_vars[value] = var
-            
-            checkbox = ctk.CTkCheckBox(
-                main_frame,
-                text=value,
-                variable=var
-            )
-            checkbox.pack(anchor="w", padx=5, pady=2)
-        
-        # Buttons
-        button_frame = ctk.CTkFrame(main_frame)
-        button_frame.pack(pady=15)
-        
-        def apply_filter():
-            selected_values = {value for value, var in value_vars.items() if var.get()}
-            filter_type = filter_type_var.get()
-            
-            self.channel_filter.set_excel_filter(column_name, selected_values, filter_type)
+            # Update display
             self.update_channels_display()
-            filter_dialog.destroy()
-        
-        def clear_filter():
-            self.channel_filter.clear_excel_filter(column_name)
-            self.update_channels_display()
-            filter_dialog.destroy()
-        
-        apply_btn = ctk.CTkButton(button_frame, text='✅ Apply', command=apply_filter, width=100)
-        apply_btn.pack(side='left', padx=5)
-        
-        clear_btn = ctk.CTkButton(button_frame, text='🧹 Clear', command=clear_filter, width=100)
-        clear_btn.pack(side='left', padx=5)
-        
-        cancel_btn = ctk.CTkButton(button_frame, text='❌ Cancel', command=filter_dialog.destroy, width=100)
-        cancel_btn.pack(side='left', padx=5)
+            
+            # Log result
+            if result["enabled"]:
+                filter_type_text = "include" if result["filter_type"] == "include" else "exclude"
+                self.log_status(f"🔽 Applied {filter_type_text} filter to '{column_name}': {len(result['selected_values'])} values selected")
+            else:
+                self.log_status(f"🧹 Cleared filter for column '{column_name}'")
 
     def edit_selected_channel(self):
         """Edit the selected channel."""
@@ -1557,84 +1493,17 @@ class VehicleLogChannelAppenderModular:
             self.log_status(f"❌ Processing error: {str(e)}")
 
     def ask_for_raster(self):
-        """Ask user for raster value with channel analysis."""
-        # Create simplified raster dialog
-        dialog = ctk.CTkToplevel(self.root)
-        dialog.title('🎯 Set Time Raster')
-        dialog.geometry('600x400')
-        dialog.transient(self.root)
-        dialog.grab_set()
+        """Ask user for raster value for resampling MDF files with detailed channel analysis."""
+        self.log_status("🔍 Analyzing channel sampling rates...")
         
-        # Center dialog
-        x = (dialog.winfo_screenwidth() // 2) - 300
-        y = (dialog.winfo_screenheight() // 2) - 200
-        dialog.geometry(f"600x400+{x}+{y}")
-        
-        main_frame = ctk.CTkFrame(dialog)
-        main_frame.pack(fill="both", expand=True, padx=20, pady=20)
-        
-        title_label = ctk.CTkLabel(
-            main_frame,
-            text="🎯 Set Time Raster for Processing",
-            font=ctk.CTkFont(size=16, weight="bold")
-        )
-        title_label.pack(pady=(10, 15))
-        
-        # Analyze channels
+        # Analyze channels first  
         all_channels = self.channel_manager.get_all_channels()
-        analysis = self.channel_analyzer.analyze_channel_sampling_rates(
+        channel_analysis = self.channel_analyzer.analyze_channel_sampling_rates(
             self.vehicle_data, all_channels, self.vehicle_file_path)
         
-        # Calculate recommended raster
-        overall_min_raster = 0.001
-        if analysis:
-            min_rasters = [a.get('suggested_min_raster', 0.001) 
-                          for a in analysis.values() 
-                          if 'suggested_min_raster' in a]
-            if min_rasters:
-                overall_min_raster = max(min_rasters)
-        
-        info_text = ctk.CTkLabel(
-            main_frame,
-            text=f"Recommended minimum raster: {overall_min_raster:.6f} seconds\n\n"
-                 "Enter raster value in seconds:",
-            font=ctk.CTkFont(size=12)
-        )
-        info_text.pack(pady=(0, 15))
-        
-        raster_var = ctk.StringVar(value=str(overall_min_raster))
-        raster_entry = ctk.CTkEntry(main_frame, textvariable=raster_var, width=200)
-        raster_entry.pack(pady=(0, 20))
-        raster_entry.focus()
-        
-        result = [None]
-        
-        def confirm_raster():
-            try:
-                raster_value = float(raster_var.get())
-                if raster_value <= 0:
-                    messagebox.showerror('Error', 'Raster value must be positive!')
-                    return
-                result[0] = raster_value
-                dialog.destroy()
-            except ValueError:
-                messagebox.showerror('Error', 'Please enter a valid number!')
-        
-        def cancel_raster():
-            dialog.destroy()
-        
-        button_frame = ctk.CTkFrame(main_frame)
-        button_frame.pack()
-        
-        ok_btn = ctk.CTkButton(button_frame, text='✅ OK', command=confirm_raster, width=100)
-        ok_btn.pack(side='left', padx=10)
-        
-        cancel_btn = ctk.CTkButton(button_frame, text='❌ Cancel', command=cancel_raster, width=100)
-        cancel_btn.pack(side='left', padx=10)
-        
-        raster_entry.bind('<Return>', lambda e: confirm_raster())
-        dialog.wait_window()
-        return result[0]
+        # Create and show advanced raster dialog
+        raster_dialog = AdvancedRasterDialog(self.root, channel_analysis, self.log_status)
+        return raster_dialog.show()
 
     # Status log management
     def clear_status_log(self):

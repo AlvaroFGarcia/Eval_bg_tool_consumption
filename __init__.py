@@ -1,53 +1,31 @@
 """
 Vehicle Log Channel Appender - Modular Package
 
-A modular implementation of the Vehicle Log Channel Appender for processing vehicle data
-with surface table interpolation and custom channel generation.
+This package provides a modular implementation of the Vehicle Log Channel Appender
+with all components separated for better maintainability and testing.
 
-This package provides:
-- ModernUI components for user interface
-- Data processing and interpolation capabilities
-- File management for MDF/CSV files
-- Settings and configuration management
-- Channel management with filtering
-- Comprehensive error handling and logging
+Main Components:
+- VehicleLogChannelAppenderModular: Main application class
+- ChannelManager: Channel CRUD operations 
+- ChannelValidator: Channel validation logic
+- SettingsManager: Settings persistence
+- ConfigurationManager: Import/export functionality
+- ChannelFilter: Search and filtering
+- DataProcessor: Surface table processing
+- ChannelAnalyzer: Signal analysis
+- FileManager: File I/O operations
+- OutputGenerator: Output generation
+- UI Components: Modern UI elements
 
 Usage:
-    from vehicle_log_channel_appender_modular import VehicleLogChannelAppenderModular
-    
-    # Create and run the application
-    app = VehicleLogChannelAppenderModular()
-    app.run()
+    from vehicle_log_channel_appender_modular import main
+    main()
 """
 
-# Import main components for easy access
-from .vehicle_log_channel_appender_modular import VehicleLogChannelAppenderModular
-
-# Import modular components
-from .ui_components import ModernAutocompleteCombobox, ModernProgressDialog
-from .data_processing import DataProcessor, ChannelAnalyzer
-from .file_management import FileManager, OutputGenerator
-from .settings_management import SettingsManager, ConfigurationManager
-from .channel_management import ChannelManager, ChannelValidator
-from .filtering_system import ChannelFilter, TextFilterHelper
-
-__version__ = "3.0.0"
+__version__ = "1.0.0"
 __author__ = "Vehicle Log Channel Appender Team"
-__description__ = "Modular vehicle log channel processing application"
 
-# Define what gets imported with "from package import *"
-__all__ = [
-    'VehicleLogChannelAppenderModular',
-    'ModernAutocompleteCombobox',
-    'ModernProgressDialog',
-    'DataProcessor',
-    'ChannelAnalyzer',
-    'FileManager',
-    'OutputGenerator',
-    'SettingsManager',
-    'ConfigurationManager',
-    'ChannelManager',
-    'ChannelValidator',
-    'ChannelFilter',
-    'TextFilterHelper'
-]
+# Import main function for easy access
+from .vehicle_log_channel_appender_modular import main
+
+__all__ = ['main']

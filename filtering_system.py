@@ -256,21 +256,7 @@ class ChannelFilter:
             self.excel_filters[column_name]["selected_values"] = set()
         self.logger("🧹 All column filters cleared")
     
-    def set_legacy_filters(self, filters_dict):
-        """Set legacy advanced filters.
-        
-        Args:
-            filters_dict: Dictionary of filter names and values
-        """
-        self.active_filters = filters_dict
-        active_filter_count = sum(1 for v in filters_dict.values() if v)
-        if active_filter_count > 0:
-            self.logger(f"🎛️ Applied {active_filter_count} advanced filter(s)")
-    
-    def clear_legacy_filters(self):
-        """Clear all legacy advanced filters."""
-        self.active_filters = {}
-        self.logger("🎛️ All advanced filters cleared")
+
     
     def get_filter_status(self, total_channels, filtered_channels):
         """Get status information about current filters.
@@ -316,43 +302,3 @@ class ChannelFilter:
             return f"{column_name} 🔽"
 
 
-class TextFilterHelper:
-    """Helper class for text filtering operations."""
-    
-    @staticmethod
-    def apply_text_filter(values, filter_text, filter_type):
-        """Apply text filter to a list of values.
-        
-        Args:
-            values: List of values to filter
-            filter_text: Text to filter by
-            filter_type: Type of filter ("contains", "starts with", "ends with", "equals", "not contains")
-            
-        Returns:
-            list: Filtered values
-        """
-        if not filter_text:
-            return values
-        
-        filter_text_lower = filter_text.lower()
-        filtered_values = []
-        
-        for value in values:
-            value_lower = value.lower()
-            should_include = False
-            
-            if filter_type == "contains" and filter_text_lower in value_lower:
-                should_include = True
-            elif filter_type == "starts with" and value_lower.startswith(filter_text_lower):
-                should_include = True
-            elif filter_type == "ends with" and value_lower.endswith(filter_text_lower):
-                should_include = True
-            elif filter_type == "equals" and value_lower == filter_text_lower:
-                should_include = True
-            elif filter_type == "not contains" and filter_text_lower not in value_lower:
-                should_include = True
-            
-            if should_include:
-                filtered_values.append(value)
-        
-        return filtered_values

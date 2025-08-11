@@ -128,20 +128,7 @@ class FileManager:
             self.logger(f"❌ Error reading CSV file: {str(e)}")
             raise Exception(f"Failed to read CSV file: {str(e)}")
     
-    def validate_csv_file(self, csv_file_path):
-        """Validate that a CSV file exists and is readable.
-        
-        Returns:
-            bool: True if file is valid, False otherwise
-        """
-        if not os.path.exists(csv_file_path):
-            return False
-        
-        try:
-            pd.read_csv(csv_file_path, nrows=1)
-            return True
-        except Exception:
-            return False
+
 
 
 class OutputGenerator:

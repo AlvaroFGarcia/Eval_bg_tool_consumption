@@ -16,16 +16,13 @@ import os
 from pathlib import Path
 import json
 from datetime import datetime
-import threading
-from typing import List, Dict, Optional
-
 # Import modular components
-from ui_components import ModernAutocompleteCombobox, ModernProgressDialog, AdvancedRasterDialog, ExcelFilterDialog
+from ui_components import ModernAutocompleteCombobox, AdvancedRasterDialog, ExcelFilterDialog
 from data_processing import DataProcessor, ChannelAnalyzer
 from file_management import FileManager, OutputGenerator
 from settings_management import SettingsManager, ConfigurationManager
 from channel_management import ChannelManager, ChannelValidator
-from filtering_system import ChannelFilter, TextFilterHelper
+from filtering_system import ChannelFilter
 
 # Configure CustomTkinter appearance
 ctk.set_appearance_mode("dark")  # Default to dark mode
@@ -560,6 +557,15 @@ class VehicleLogChannelAppenderModular:
         )
         table_title.pack(pady=(15, 5))
         
+        # Multi-selection info
+        info_label = ctk.CTkLabel(
+            table_frame,
+            text="💡 Tip: Use Ctrl+Click to select multiple channels • Del key to delete • Ctrl+D to duplicate • Enter/Double-click to edit",
+            font=ctk.CTkFont(size=10),
+            text_color="gray"
+        )
+        info_label.pack(pady=(0, 10))
+        
         # Search and filter controls
         self.setup_search_controls(table_frame)
         
@@ -682,6 +688,9 @@ class VehicleLogChannelAppenderModular:
         self.channels_tree.grid(row=0, column=0, sticky="nsew")
         v_scrollbar.grid(row=0, column=1, sticky="ns")
         h_scrollbar.grid(row=1, column=0, sticky="ew")
+        
+        # Bind keyboard shortcuts after tree is created
+        self.bind_channels_tree_shortcuts()
     
     def setup_table_controls(self, parent):
         """Setup table management controls."""
@@ -703,18 +712,18 @@ class VehicleLogChannelAppenderModular:
         
         self.delete_channel_btn = ctk.CTkButton(
             controls_row1,
-            text="🗑️ Delete Selected",
+            text="🗑️ Delete Selected (Del)",
             command=self.delete_selected_channel,
-            width=120,
+            width=140,
             height=30
         )
         self.delete_channel_btn.pack(side="left", padx=5)
         
         self.duplicate_channel_btn = ctk.CTkButton(
             controls_row1,
-            text="📋 Duplicate",
+            text="📋 Duplicate (Ctrl+D)",
             command=self.duplicate_selected_channel,
-            width=100,
+            width=130,
             height=30
         )
         self.duplicate_channel_btn.pack(side="left", padx=5)
@@ -793,9 +802,51 @@ class VehicleLogChannelAppenderModular:
         
         # Window close event
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+        
+        # Keyboard shortcuts for channels table
+        self.setup_keyboard_shortcuts()
     
-    # Event handlers and core functionality methods will be continued in a follow-up...
-    # This is getting quite long, so I'll continue with the rest in the next part
+    def setup_keyboard_shortcuts(self):
+        """Setup keyboard shortcuts for the channels table."""
+        # We need to bind to the channels tree after it's created
+        # This will be called during initialization, but the tree might not exist yet
+        # So we'll defer the binding until later or check if tree exists
+        pass
+    
+    def bind_channels_tree_shortcuts(self):
+        """Bind keyboard shortcuts to the channels tree (called after tree creation)."""
+        if hasattr(self, 'channels_tree') and self.channels_tree:
+            # Delete key for deleting selected channel(s)
+            self.channels_tree.bind('<Delete>', self.on_delete_key)
+            self.channels_tree.bind('<BackSpace>', self.on_delete_key)  # Alternative delete key
+            
+            # Ctrl+D for duplicate (common shortcut)
+            self.channels_tree.bind('<Control-d>', self.on_duplicate_key)
+            self.channels_tree.bind('<Control-D>', self.on_duplicate_key)
+            
+            # Enter key for edit
+            self.channels_tree.bind('<Return>', self.on_enter_key)
+            self.channels_tree.bind('<Double-Button-1>', self.on_double_click)
+    
+    def on_delete_key(self, event):
+        """Handle Delete key press on channels tree."""
+        self.delete_selected_channel()
+        return "break"  # Prevent default behavior
+    
+    def on_duplicate_key(self, event):
+        """Handle Ctrl+D key press on channels tree."""
+        self.duplicate_selected_channel()
+        return "break"
+    
+    def on_enter_key(self, event):
+        """Handle Enter key press on channels tree."""
+        self.edit_selected_channel()
+        return "break"
+    
+    def on_double_click(self, event):
+        """Handle double click on channels tree."""
+        self.edit_selected_channel()
+        return "break"
     
     def log_status(self, message):
         """Add a message to the status log."""
@@ -1003,7 +1054,7 @@ class VehicleLogChannelAppenderModular:
                 self.log_status(f"🧹 Cleared filter for column '{column_name}'")
 
     def edit_selected_channel(self):
-        """Edit the selected channel."""
+        """Edit the selected channel using a proper dialog."""
         selection = self.channels_tree.selection()
         if not selection:
             messagebox.showwarning("Warning", "Please select a channel to edit!")
@@ -1019,74 +1070,344 @@ class VehicleLogChannelAppenderModular:
             messagebox.showerror("Error", "Channel not found!")
             return
         
-        # Populate form with channel data
-        self.channel_name_var.set(channel['name'])
-        self.csv_file_var.set(channel['csv_file'])
-        self.x_col_var.set(channel['x_column'])
-        self.y_col_var.set(channel['y_column'])
-        self.z_col_var.set(channel['z_column'])
-        self.veh_x_var.set(channel['vehicle_x_channel'])
-        self.veh_y_var.set(channel['vehicle_y_channel'])
-        self.units_var.set(channel['units'])
-        self.comment_var.set(channel['comment'])
+        # Open the edit dialog
+        self.open_edit_channel_dialog(channel, channel_index)
+    
+    def open_edit_channel_dialog(self, channel, channel_index):
+        """Open a separate dialog to edit the selected channel."""
+        edit_dialog = ctk.CTkToplevel(self.root)
+        edit_dialog.title(f'✏️ Edit Channel: {channel["name"]}')
+        edit_dialog.geometry('800x700')
+        edit_dialog.transient(self.root)
+        edit_dialog.grab_set()
+        edit_dialog.resizable(True, True)
         
-        # Load CSV columns if file exists
-        if os.path.exists(channel['csv_file']):
-            try:
+        # Center dialog
+        edit_dialog.update_idletasks()
+        x = (edit_dialog.winfo_screenwidth() // 2) - 400
+        y = (edit_dialog.winfo_screenheight() // 2) - 350
+        edit_dialog.geometry(f"800x700+{x}+{y}")
+        
+        # Create scrollable main frame
+        main_frame = ctk.CTkScrollableFrame(edit_dialog)
+        main_frame.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        title_label = ctk.CTkLabel(
+            main_frame,
+            text=f"✏️ Edit Channel: {channel['name']}",
+            font=ctk.CTkFont(size=18, weight="bold")
+        )
+        title_label.pack(pady=(10, 15))
+        
+        # Create form variables for editing
+        edit_channel_name_var = ctk.StringVar(value=channel['name'])
+        edit_csv_file_var = ctk.StringVar(value=channel['csv_file'])
+        edit_x_col_var = ctk.StringVar(value=channel['x_column'])
+        edit_y_col_var = ctk.StringVar(value=channel['y_column'])
+        edit_z_col_var = ctk.StringVar(value=channel['z_column'])
+        edit_veh_x_var = ctk.StringVar(value=channel['vehicle_x_channel'])
+        edit_veh_y_var = ctk.StringVar(value=channel['vehicle_y_channel'])
+        edit_units_var = ctk.StringVar(value=channel['units'])
+        edit_comment_var = ctk.StringVar(value=channel['comment'])
+        
+        # Main form container - reuse the same layout as the main form
+        form_frame = ctk.CTkFrame(main_frame)
+        form_frame.pack(fill="x", padx=10, pady=(0, 15))
+        
+        # Channel name
+        name_frame = ctk.CTkFrame(form_frame)
+        name_frame.pack(fill="x", padx=10, pady=5)
+        
+        ctk.CTkLabel(name_frame, text="📝 Channel Name:", 
+                    font=ctk.CTkFont(size=12, weight="bold")).pack(side="left", padx=10, pady=10)
+        edit_channel_name_entry = ctk.CTkEntry(name_frame, textvariable=edit_channel_name_var, 
+                                              placeholder_text="Enter channel name", width=250)
+        edit_channel_name_entry.pack(side="left", padx=10, pady=10)
+        
+        # CSV Surface Table file
+        csv_frame = ctk.CTkFrame(form_frame)
+        csv_frame.pack(fill="x", padx=10, pady=5)
+        
+        ctk.CTkLabel(csv_frame, text="📊 Surface Table CSV:", 
+                    font=ctk.CTkFont(size=12, weight="bold")).pack(side="left", padx=10, pady=10)
+        edit_csv_file_entry = ctk.CTkEntry(csv_frame, textvariable=edit_csv_file_var, 
+                                          placeholder_text="Select CSV file", width=200)
+        edit_csv_file_entry.pack(side="left", padx=10, pady=10)
+        
+        def browse_edit_csv_file():
+            file_path = filedialog.askopenfilename(
+                title="Select Surface Table CSV File",
+                filetypes=[("CSV Files", "*.csv")]
+            )
+            
+            if file_path:
+                edit_csv_file_var.set(file_path)
+                
+                # Load CSV columns for selection
+                try:
+                    columns = self.file_manager.load_csv_columns(file_path)
+                    
+                    # Update comboboxes with available columns
+                    edit_x_col_combo.set_completion_list(columns)
+                    edit_y_col_combo.set_completion_list(columns)
+                    edit_z_col_combo.set_completion_list(columns)
+                    
+                    self.log_status(f"✅ Loaded CSV columns for editing: {', '.join(columns)}")
+                    
+                except Exception as e:
+                    messagebox.showerror("Error", f"Failed to read CSV file: {str(e)}")
+                    self.log_status(f"❌ Error reading CSV file: {str(e)}")
+        
+        edit_browse_csv_btn = ctk.CTkButton(csv_frame, text="📁 Browse", 
+                                           command=browse_edit_csv_file, width=80)
+        edit_browse_csv_btn.pack(side="left", padx=5, pady=10)
+        
+        # CSV columns configuration
+        csv_config_frame = ctk.CTkFrame(form_frame)
+        csv_config_frame.pack(fill="x", padx=10, pady=10)
+        
+        csv_config_title = ctk.CTkLabel(
+            csv_config_frame,
+            text="📋 CSV Surface Table Configuration",
+            font=ctk.CTkFont(size=14, weight="bold")
+        )
+        csv_config_title.pack(pady=(10, 10))
+        
+        # CSV columns in a grid
+        csv_grid = ctk.CTkFrame(csv_config_frame)
+        csv_grid.pack(fill="x", padx=20, pady=(0, 15))
+        
+        # X column
+        ctk.CTkLabel(csv_grid, text="📊 X-axis Column (e.g., RPM):", 
+                    font=ctk.CTkFont(size=11)).grid(row=0, column=0, padx=10, pady=5, sticky="w")
+        edit_x_col_combo = ModernAutocompleteCombobox(csv_grid, variable=edit_x_col_var, width=180)
+        edit_x_col_combo.grid(row=0, column=1, padx=10, pady=5)
+        
+        # Y column
+        ctk.CTkLabel(csv_grid, text="📈 Y-axis Column (e.g., ETASP):", 
+                    font=ctk.CTkFont(size=11)).grid(row=1, column=0, padx=10, pady=5, sticky="w")
+        edit_y_col_combo = ModernAutocompleteCombobox(csv_grid, variable=edit_y_col_var, width=180)
+        edit_y_col_combo.grid(row=1, column=1, padx=10, pady=5)
+        
+        # Z column
+        ctk.CTkLabel(csv_grid, text="📋 Z-axis Column (Values):", 
+                    font=ctk.CTkFont(size=11)).grid(row=2, column=0, padx=10, pady=5, sticky="w")
+        edit_z_col_combo = ModernAutocompleteCombobox(csv_grid, variable=edit_z_col_var, width=180)
+        edit_z_col_combo.grid(row=2, column=1, padx=10, pady=5)
+        
+        # Vehicle channels configuration
+        veh_config_frame = ctk.CTkFrame(form_frame)
+        veh_config_frame.pack(fill="x", padx=10, pady=10)
+        
+        veh_config_title = ctk.CTkLabel(
+            veh_config_frame,
+            text="🚗 Vehicle Log Channel Selection",
+            font=ctk.CTkFont(size=14, weight="bold")
+        )
+        veh_config_title.pack(pady=(10, 10))
+        
+        # Vehicle channels in a grid
+        veh_grid = ctk.CTkFrame(veh_config_frame)
+        veh_grid.pack(fill="x", padx=20, pady=(0, 15))
+        
+        # Vehicle X channel
+        ctk.CTkLabel(veh_grid, text="🔧 Vehicle X Channel:", 
+                    font=ctk.CTkFont(size=11)).grid(row=0, column=0, padx=10, pady=5, sticky="w")
+        edit_veh_x_combo = ModernAutocompleteCombobox(veh_grid, variable=edit_veh_x_var, width=200)
+        edit_veh_x_combo.grid(row=0, column=1, padx=10, pady=5)
+        
+        # Vehicle Y channel
+        ctk.CTkLabel(veh_grid, text="📊 Vehicle Y Channel:", 
+                    font=ctk.CTkFont(size=11)).grid(row=1, column=0, padx=10, pady=5, sticky="w")
+        edit_veh_y_combo = ModernAutocompleteCombobox(veh_grid, variable=edit_veh_y_var, width=200)
+        edit_veh_y_combo.grid(row=1, column=1, padx=10, pady=5)
+        
+        # Units and comment
+        meta_frame = ctk.CTkFrame(form_frame)
+        meta_frame.pack(fill="x", padx=10, pady=10)
+        
+        meta_grid = ctk.CTkFrame(meta_frame)
+        meta_grid.pack(fill="x", padx=20, pady=15)
+        
+        # Units
+        ctk.CTkLabel(meta_grid, text="📏 Units:", 
+                    font=ctk.CTkFont(size=11)).grid(row=0, column=0, padx=10, pady=5, sticky="w")
+        edit_units_entry = ctk.CTkEntry(meta_grid, textvariable=edit_units_var, 
+                                       placeholder_text="e.g., bar, %", width=120)
+        edit_units_entry.grid(row=0, column=1, padx=10, pady=5)
+        
+        # Comment
+        ctk.CTkLabel(meta_grid, text="💬 Comment:", 
+                    font=ctk.CTkFont(size=11)).grid(row=0, column=2, padx=10, pady=5, sticky="w")
+        edit_comment_entry = ctk.CTkEntry(meta_grid, textvariable=edit_comment_var, 
+                                         placeholder_text="Optional comment", width=200)
+        edit_comment_entry.grid(row=0, column=3, padx=10, pady=5)
+        
+        # Initialize comboboxes with current data
+        try:
+            # Load CSV columns if file exists
+            if os.path.exists(channel['csv_file']):
                 columns = self.file_manager.load_csv_columns(channel['csv_file'])
-                self.x_col_combo.set_completion_list(columns)
-                self.y_col_combo.set_completion_list(columns)
-                self.z_col_combo.set_completion_list(columns)
-            except Exception:
-                pass
+                edit_x_col_combo.set_completion_list(columns)
+                edit_y_col_combo.set_completion_list(columns)
+                edit_z_col_combo.set_completion_list(columns)
+            
+            # Load vehicle channels if available
+            if self.available_channels:
+                edit_veh_x_combo.set_completion_list(self.available_channels)
+                edit_veh_y_combo.set_completion_list(self.available_channels)
+                
+        except Exception as e:
+            self.log_status(f"⚠️ Error loading initial data for edit dialog: {str(e)}")
         
-        # Switch to Custom Channels tab
-        self.tabview.set("⚙️ Custom Channels")
+        # Buttons frame
+        button_frame = ctk.CTkFrame(main_frame)
+        button_frame.pack(pady=20)
         
-        # Delete the original and let user re-add as edited
-        self.channel_manager.delete_channel(channel_index)
-        self.update_channels_display()
+        def save_changes():
+            # Create updated channel configuration
+            updated_config = self.channel_manager.create_channel_config(
+                name=edit_channel_name_var.get(),
+                csv_file=edit_csv_file_var.get(),
+                x_column=edit_x_col_var.get(),
+                y_column=edit_y_col_var.get(),
+                z_column=edit_z_col_var.get(),
+                vehicle_x_channel=edit_veh_x_var.get(),
+                vehicle_y_channel=edit_veh_y_var.get(),
+                units=edit_units_var.get(),
+                comment=edit_comment_var.get()
+            )
+            
+            # Validate the updated configuration
+            is_valid, error_msg = self.channel_validator.validate_channel_config(updated_config)
+            if not is_valid:
+                messagebox.showerror("Validation Error", error_msg)
+                return
+            
+            # Check if new name conflicts with other channels (except current one)
+            for i, ch in enumerate(self.channel_manager.get_all_channels()):
+                if i != channel_index and ch['name'] == updated_config['name']:
+                    messagebox.showerror("Error", "Channel with this name already exists!")
+                    return
+            
+            # Update the channel
+            success, error_msg = self.channel_manager.update_channel(channel_index, updated_config)
+            if success:
+                # Update display
+                self.update_channels_display()
+                
+                # Auto-save settings
+                self.save_settings()
+                
+                self.log_status(f"✅ Updated channel: {channel['name']} → {updated_config['name']}")
+                edit_dialog.destroy()
+            else:
+                messagebox.showerror("Error", error_msg)
+            
+        def cancel_edit():
+            edit_dialog.destroy()
         
-        self.log_status(f"✏️ Editing channel: {channel_name}")
+        save_btn = ctk.CTkButton(
+            button_frame,
+            text='✅ Save Changes',
+            command=save_changes,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            width=120,
+            height=35
+        )
+        save_btn.pack(side='left', padx=5)
+        
+        cancel_btn = ctk.CTkButton(
+            button_frame,
+            text='❌ Cancel',
+            command=cancel_edit,
+            width=100,
+            height=35
+        )
+        cancel_btn.pack(side='left', padx=5)
+        
+        self.log_status(f"✏️ Opened edit dialog for channel: {channel['name']}")
 
     def delete_selected_channel(self):
-        """Delete the selected channel."""
+        """Delete the selected channel(s)."""
         selection = self.channels_tree.selection()
         if not selection:
-            messagebox.showwarning("Warning", "Please select a channel to delete!")
+            messagebox.showwarning("Warning", "Please select one or more channels to delete!")
             return
         
-        item = selection[0]
-        values = self.channels_tree.item(item)['values']
-        channel_name = values[0]
+        # Get all selected channel names
+        selected_channels = []
+        for item in selection:
+            values = self.channels_tree.item(item)['values']
+            channel_name = values[0]
+            selected_channels.append(channel_name)
         
-        if messagebox.askyesno("Confirm Delete", f"Are you sure you want to delete channel '{channel_name}'?"):
-            success, error_msg = self.channel_manager.delete_channel_by_name(channel_name)
-            if success:
+        # Confirm deletion
+        if len(selected_channels) == 1:
+            confirm_msg = f"Are you sure you want to delete channel '{selected_channels[0]}'?"
+        else:
+            confirm_msg = f"Are you sure you want to delete {len(selected_channels)} selected channels?\n\nChannels to delete:\n" + "\n".join(f"• {name}" for name in selected_channels)
+        
+        if messagebox.askyesno("Confirm Delete", confirm_msg):
+            if len(selected_channels) == 1:
+                # Single channel deletion
+                success, error_msg = self.channel_manager.delete_channel_by_name(selected_channels[0])
+                if success:
+                    self.update_channels_display()
+                    self.save_settings()
+                    self.log_status(f"✅ Deleted channel: {selected_channels[0]}")
+                else:
+                    messagebox.showerror("Error", error_msg)
+            else:
+                # Multiple channel deletion
+                success_count, errors = self.channel_manager.delete_multiple_channels_by_names(selected_channels)
                 self.update_channels_display()
                 self.save_settings()
-            else:
-                messagebox.showerror("Error", error_msg)
+                
+                if success_count > 0:
+                    self.log_status(f"✅ Successfully deleted {success_count} channel(s)")
+                
+                if errors:
+                    error_msg = f"Some deletions failed:\n" + "\n".join(errors)
+                    messagebox.showerror("Deletion Errors", error_msg)
 
     def duplicate_selected_channel(self):
-        """Duplicate the selected channel."""
+        """Duplicate the selected channel(s)."""
         selection = self.channels_tree.selection()
         if not selection:
-            messagebox.showwarning("Warning", "Please select a channel to duplicate!")
+            messagebox.showwarning("Warning", "Please select one or more channels to duplicate!")
             return
         
-        item = selection[0]
-        values = self.channels_tree.item(item)['values']
-        channel_name = values[0]
+        # Get all selected channel names
+        selected_channels = []
+        for item in selection:
+            values = self.channels_tree.item(item)['values']
+            channel_name = values[0]
+            selected_channels.append(channel_name)
         
-        channel, channel_index = self.channel_manager.find_channel_by_name(channel_name)
-        if channel is not None:
-            success, error_msg = self.channel_manager.duplicate_channel(channel_index)
-            if success:
-                self.update_channels_display()
-                self.save_settings()
-            else:
-                messagebox.showerror("Error", error_msg)
+        if len(selected_channels) == 1:
+            # Single channel duplication
+            channel, channel_index = self.channel_manager.find_channel_by_name(selected_channels[0])
+            if channel is not None:
+                success, error_msg = self.channel_manager.duplicate_channel(channel_index)
+                if success:
+                    self.update_channels_display()
+                    self.save_settings()
+                    self.log_status(f"✅ Duplicated channel: {selected_channels[0]}")
+                else:
+                    messagebox.showerror("Error", error_msg)
+        else:
+            # Multiple channel duplication
+            success_count, errors = self.channel_manager.duplicate_multiple_channels_by_names(selected_channels)
+            self.update_channels_display()
+            self.save_settings()
+            
+            if success_count > 0:
+                self.log_status(f"✅ Successfully duplicated {success_count} channel(s)")
+            
+            if errors:
+                error_msg = f"Some duplications failed:\n" + "\n".join(errors)
+                messagebox.showerror("Duplication Errors", error_msg)
 
     def clear_all_channels(self):
         """Clear all custom channels after confirmation."""

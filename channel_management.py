@@ -71,21 +71,7 @@ class ChannelManager:
         self.logger(f"✅ Updated channel: {old_name} → {new_config['name']}")
         return True, ""
     
-    def delete_channel(self, channel_index):
-        """Delete a channel by index.
-        
-        Args:
-            channel_index: Index of the channel to delete
-            
-        Returns:
-            tuple: (success: bool, error_message: str)
-        """
-        if channel_index < 0 or channel_index >= len(self.custom_channels):
-            return False, "Invalid channel index!"
-        
-        deleted_channel = self.custom_channels.pop(channel_index)
-        self.logger(f"🗑️ Deleted channel: {deleted_channel['name']}")
-        return True, ""
+
     
     def delete_channel_by_name(self, channel_name):
         """Delete a channel by name.
@@ -98,9 +84,47 @@ class ChannelManager:
         """
         for i, channel in enumerate(self.custom_channels):
             if channel['name'] == channel_name:
-                return self.delete_channel(i)
+                deleted_channel = self.custom_channels.pop(i)
+                self.logger(f"🗑️ Deleted channel: {deleted_channel['name']}")
+                return True, ""
         
         return False, f"Channel '{channel_name}' not found!"
+    
+    def delete_multiple_channels_by_names(self, channel_names):
+        """Delete multiple channels by their names.
+        
+        Args:
+            channel_names: List of channel names to delete
+            
+        Returns:
+            tuple: (success_count: int, error_messages: list)
+        """
+        if not channel_names:
+            return 0, ["No channels selected for deletion"]
+        
+        success_count = 0
+        errors = []
+        
+        # Sort names by index (descending) to avoid index shifting issues
+        channels_to_delete = []
+        for name in channel_names:
+            for i, channel in enumerate(self.custom_channels):
+                if channel['name'] == name:
+                    channels_to_delete.append((i, channel))
+                    break
+        
+        # Sort by index descending so we delete from the end first
+        channels_to_delete.sort(key=lambda x: x[0], reverse=True)
+        
+        for index, channel in channels_to_delete:
+            try:
+                deleted_channel = self.custom_channels.pop(index)
+                self.logger(f"🗑️ Deleted channel: {deleted_channel['name']}")
+                success_count += 1
+            except Exception as e:
+                errors.append(f"Failed to delete '{channel['name']}': {str(e)}")
+        
+        return success_count, errors
     
     def duplicate_channel(self, channel_index):
         """Duplicate a channel by index.
@@ -130,6 +154,39 @@ class ChannelManager:
         self.custom_channels.append(original_channel)
         self.logger(f"📋 Duplicated channel: {base_name} → {new_name}")
         return True, ""
+    
+    def duplicate_multiple_channels_by_names(self, channel_names):
+        """Duplicate multiple channels by their names.
+        
+        Args:
+            channel_names: List of channel names to duplicate
+            
+        Returns:
+            tuple: (success_count: int, error_messages: list)
+        """
+        if not channel_names:
+            return 0, ["No channels selected for duplication"]
+        
+        success_count = 0
+        errors = []
+        
+        for channel_name in channel_names:
+            # Find channel by name
+            channel_found = False
+            for i, channel in enumerate(self.custom_channels):
+                if channel['name'] == channel_name:
+                    success, error_msg = self.duplicate_channel(i)
+                    if success:
+                        success_count += 1
+                    else:
+                        errors.append(f"Failed to duplicate '{channel_name}': {error_msg}")
+                    channel_found = True
+                    break
+            
+            if not channel_found:
+                errors.append(f"Channel '{channel_name}' not found for duplication")
+        
+        return success_count, errors
     
     def find_channel_by_name(self, channel_name):
         """Find a channel by name.
@@ -240,32 +297,7 @@ class ChannelManager:
             'comment': comment.strip()
         }
     
-    def get_channels_summary(self):
-        """Get a summary of all configured channels.
-        
-        Returns:
-            dict: Summary information
-        """
-        if not self.custom_channels:
-            return {
-                'total_channels': 0,
-                'csv_files': [],
-                'vehicle_channels': []
-            }
-        
-        csv_files = set()
-        vehicle_channels = set()
-        
-        for channel in self.custom_channels:
-            csv_files.add(os.path.basename(channel['csv_file']))
-            vehicle_channels.add(channel['vehicle_x_channel'])
-            vehicle_channels.add(channel['vehicle_y_channel'])
-        
-        return {
-            'total_channels': len(self.custom_channels),
-            'csv_files': sorted(list(csv_files)),
-            'vehicle_channels': sorted(list(vehicle_channels))
-        }
+
 
 
 class ChannelValidator:
@@ -279,129 +311,3 @@ class ChannelValidator:
         """
         self.logger = logger if logger else lambda msg: print(msg)
     
-    def validate_csv_file(self, csv_file_path, x_col, y_col, z_col):
-        """Validate a CSV file and its columns.
-        
-        Args:
-            csv_file_path: Path to the CSV file
-            x_col: X column name
-            y_col: Y column name
-            z_col: Z column name
-            
-        Returns:
-            tuple: (is_valid: bool, error_message: str)
-        """
-        import pandas as pd
-        
-        if not os.path.exists(csv_file_path):
-            return False, "CSV file does not exist!"
-        
-        try:
-            df = pd.read_csv(csv_file_path, nrows=5)  # Read just a few rows to check structure
-            columns = df.columns.tolist()
-            
-            # Check if required columns exist
-            missing_columns = []
-            for col_name, col_label in [(x_col, 'X'), (y_col, 'Y'), (z_col, 'Z')]:
-                if col_name not in columns:
-                    missing_columns.append(f"{col_label} column '{col_name}'")
-            
-            if missing_columns:
-                return False, f"Missing columns in CSV: {', '.join(missing_columns)}"
-            
-            # Check if columns have numeric data
-            for col_name, col_label in [(x_col, 'X'), (y_col, 'Y'), (z_col, 'Z')]:
-                try:
-                    pd.to_numeric(df[col_name], errors='coerce')
-                except Exception:
-                    return False, f"{col_label} column '{col_name}' does not contain valid numeric data"
-            
-            return True, ""
-            
-        except Exception as e:
-            return False, f"Error reading CSV file: {str(e)}"
-    
-    def validate_vehicle_channels(self, vehicle_data, x_channel, y_channel):
-        """Validate that vehicle channels exist in the vehicle data.
-        
-        Args:
-            vehicle_data: Vehicle data object (MDF or DataFrame)
-            x_channel: Vehicle X channel name
-            y_channel: Vehicle Y channel name
-            
-        Returns:
-            tuple: (is_valid: bool, error_message: str)
-        """
-        if vehicle_data is None:
-            return False, "No vehicle data loaded!"
-        
-        # Handle different types of vehicle data
-        if hasattr(vehicle_data, 'columns'):  # DataFrame (CSV)
-            available_channels = vehicle_data.columns.tolist()
-        elif hasattr(vehicle_data, 'channels_db'):  # MDF
-            available_channels = list(vehicle_data.channels_db.keys())
-        else:
-            return False, "Unsupported vehicle data format!"
-        
-        missing_channels = []
-        if x_channel not in available_channels:
-            missing_channels.append(f"X channel '{x_channel}'")
-        if y_channel not in available_channels:
-            missing_channels.append(f"Y channel '{y_channel}'")
-        
-        if missing_channels:
-            return False, f"Missing vehicle channels: {', '.join(missing_channels)}"
-        
-        return True, ""
-    
-    def validate_all_channels(self, channels, vehicle_data=None):
-        """Validate all channel configurations.
-        
-        Args:
-            channels: List of channel configurations
-            vehicle_data: Vehicle data object (optional)
-            
-        Returns:
-            tuple: (is_valid: bool, validation_results: list)
-        """
-        results = []
-        all_valid = True
-        
-        for i, channel in enumerate(channels):
-            channel_results = {
-                'index': i,
-                'name': channel.get('name', f'Channel {i+1}'),
-                'csv_valid': True,
-                'vehicle_channels_valid': True,
-                'errors': []
-            }
-            
-            # Validate CSV file
-            csv_result = self.validate_csv_file(
-                channel['csv_file'],
-                channel['x_column'],
-                channel['y_column'],
-                channel['z_column']
-            )
-            
-            if not csv_result[0]:
-                channel_results['csv_valid'] = False
-                channel_results['errors'].append(f"CSV: {csv_result[1]}")
-                all_valid = False
-            
-            # Validate vehicle channels if vehicle data is available
-            if vehicle_data is not None:
-                vehicle_result = self.validate_vehicle_channels(
-                    vehicle_data,
-                    channel['vehicle_x_channel'],
-                    channel['vehicle_y_channel']
-                )
-                
-                if not vehicle_result[0]:
-                    channel_results['vehicle_channels_valid'] = False
-                    channel_results['errors'].append(f"Vehicle: {vehicle_result[1]}")
-                    all_valid = False
-            
-            results.append(channel_results)
-        
-        return all_valid, results

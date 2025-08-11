@@ -238,11 +238,18 @@ class AdvancedRasterDialog:
         
         suggestions = [0.001, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0]
         
-        ctk.CTkLabel(suggestions_frame, text="Quick select:", 
-                    font=ctk.CTkFont(size=11, weight="bold")).pack(pady=(10, 5))
+        # Configure grid for suggestions frame
+        suggestions_frame.grid_columnconfigure(0, weight=1)
+        suggestions_frame.grid_columnconfigure(1, weight=1)
+        suggestions_frame.grid_columnconfigure(2, weight=1)
+        
+        # Title label using grid
+        title_label = ctk.CTkLabel(suggestions_frame, text="Quick select:", 
+                    font=ctk.CTkFont(size=11, weight="bold"))
+        title_label.grid(row=0, column=0, columnspan=3, pady=(10, 5))
         
         for i, value in enumerate(suggestions):
-            row = i // 3
+            row = (i // 3) + 1  # Start from row 1 (row 0 is the title)
             col = i % 3
             color = "#2b7a0b" if value >= self.overall_min_raster else "#8a6914"
             
@@ -437,16 +444,59 @@ class ExcelFilterDialog:
         )
         exclude_radio.pack(anchor="w", padx=20, pady=(2, 10))
         
-        # Search within values
+        # Advanced text filter section
+        text_filter_frame = ctk.CTkFrame(main_scroll_frame)
+        text_filter_frame.pack(fill="x", pady=(0, 10))
+        
+        ctk.CTkLabel(text_filter_frame, text="🔍 Text Filter:", 
+                    font=ctk.CTkFont(size=12, weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
+        
+        # Text filter controls
+        text_controls_frame = ctk.CTkFrame(text_filter_frame)
+        text_controls_frame.pack(fill="x", padx=10, pady=(0, 5))
+        
+        # Filter type dropdown
+        self.text_filter_type_var = ctk.StringVar(value="contains")
+        text_type_menu = ctk.CTkOptionMenu(
+            text_controls_frame,
+            variable=self.text_filter_type_var,
+            values=["contains", "starts with", "ends with", "equals", "not contains"],
+            font=ctk.CTkFont(size=10),
+            width=120
+        )
+        text_type_menu.pack(side="left", padx=(0, 10))
+        
+        # Text filter entry
+        self.text_filter_value_var = ctk.StringVar()
+        text_filter_entry = ctk.CTkEntry(
+            text_controls_frame,
+            textvariable=self.text_filter_value_var,
+            placeholder_text="Enter text to filter...",
+            width=200
+        )
+        text_filter_entry.pack(side="left", fill="x", expand=True)
+        
+        # Apply text filter button
+        apply_text_btn = ctk.CTkButton(
+            text_filter_frame,
+            text="Apply Text Filter",
+            command=self.apply_text_filter,
+            height=25,
+            width=120,
+            font=ctk.CTkFont(size=10)
+        )
+        apply_text_btn.pack(padx=10, pady=(0, 10))
+        
+        # Simple search within values
         search_frame = ctk.CTkFrame(main_scroll_frame)
         search_frame.pack(fill="x", pady=(0, 10))
         
-        ctk.CTkLabel(search_frame, text="🔍 Search values:", 
+        ctk.CTkLabel(search_frame, text="🔍 Quick search values:", 
                     font=ctk.CTkFont(size=12, weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
         
         self.search_var = ctk.StringVar()
         self.search_var.trace('w', self.filter_values_list)
-        search_entry = ctk.CTkEntry(search_frame, textvariable=self.search_var, placeholder_text="Type to filter...")
+        search_entry = ctk.CTkEntry(search_frame, textvariable=self.search_var, placeholder_text="Type to search...")
         search_entry.pack(fill="x", padx=10, pady=(0, 10))
         
         # Values selection
@@ -504,6 +554,37 @@ class ExcelFilterDialog:
         cancel_btn = ctk.CTkButton(button_frame_fixed, text='❌ Cancel', command=self.cancel_filter, width=100)
         cancel_btn.pack(side='right')
         
+    def apply_text_filter(self):
+        """Apply text filter to checkbox selections."""
+        filter_text = self.text_filter_value_var.get().strip().lower()
+        filter_type = self.text_filter_type_var.get()
+        
+        if not filter_text:
+            return
+        
+        # Clear current selections
+        for var in self.value_vars.values():
+            var.set(False)
+        
+        # Select values based on text filter
+        for value in self.unique_values:
+            value_lower = value.lower()
+            should_select = False
+            
+            if filter_type == "contains" and filter_text in value_lower:
+                should_select = True
+            elif filter_type == "starts with" and value_lower.startswith(filter_text):
+                should_select = True
+            elif filter_type == "ends with" and value_lower.endswith(filter_text):
+                should_select = True
+            elif filter_type == "equals" and value_lower == filter_text:
+                should_select = True
+            elif filter_type == "not contains" and filter_text not in value_lower:
+                should_select = True
+            
+            if should_select and value in self.value_vars:
+                self.value_vars[value].set(True)
+    
     def filter_values_list(self, *args):
         """Filter the values list based on search term."""
         search_term = self.search_var.get().lower()

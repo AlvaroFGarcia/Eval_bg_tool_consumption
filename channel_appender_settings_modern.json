@@ -1,17 +1,6 @@
 {
-  "vehicle_file": "C:/Users/BRM1511/OneDrive - FEV Group GmbH/Atividades T3/Problema ADV OPT H20 2025 AGOSTO/2025-08-06_16_JK96135_2025_GPEC5_PH14_3_GSET3_JJ_BSG_EXPORT_MULE_V03_CSV17_BVS_SPD_LOAD_MUDANCA_BSG 1.mf4",
+  "vehicle_file": "C:/Users/BRM1511/Desktop/Aquisicoes_Drive_Session_363BSG/2025-07-17_YS82471__363_BSG_NP__4_Rodagem_Pedro.dat",
   "custom_channels": [
-    {
-      "name": "AI_50_BG",
-      "csv_file": "C:/Users/BRM1511/OneDrive - FEV Group GmbH/Atividades T3/Problema ADV OPT H20 2025 AGOSTO/715096_A04_E0 92RON_000071_3.52197_BIGGRID_REDUZIDO_ECT60.csv",
-      "x_column": "RPM",
-      "y_column": "ETASP",
-      "z_column": "A_I50",
-      "vehicle_x_channel": "RPMX1",
-      "vehicle_y_channel": "ETASP",
-      "units": "",
-      "comment": ""
-    },
     {
       "name": "AI_50_BG_1",
       "csv_file": "C:/Users/BRM1511/OneDrive - FEV Group GmbH/Atividades T3/Problema ADV OPT H20 2025 AGOSTO/715096_A04_E0 92RON_000071_3.52197_BIGGRID_REDUZIDO_ECT60.csv",
@@ -24,11 +13,99 @@
       "comment": ""
     },
     {
-      "name": "SPK_BG",
+      "name": "AI_50_BG_1_copy",
       "csv_file": "C:/Users/BRM1511/OneDrive - FEV Group GmbH/Atividades T3/Problema ADV OPT H20 2025 AGOSTO/715096_A04_E0 92RON_000071_3.52197_BIGGRID_REDUZIDO_ECT60.csv",
       "x_column": "RPM",
       "y_column": "ETASP",
-      "z_column": "AVANCE_1",
+      "z_column": "A_I50_1",
+      "vehicle_x_channel": "RPMX1",
+      "vehicle_y_channel": "ETASP",
+      "units": "",
+      "comment": ""
+    },
+    {
+      "name": "AI_50_BG_1_copy_copy",
+      "csv_file": "C:/Users/BRM1511/OneDrive - FEV Group GmbH/Atividades T3/Problema ADV OPT H20 2025 AGOSTO/715096_A04_E0 92RON_000071_3.52197_BIGGRID_REDUZIDO_ECT60.csv",
+      "x_column": "RPM",
+      "y_column": "ETASP",
+      "z_column": "A_I50_1",
+      "vehicle_x_channel": "RPMX1",
+      "vehicle_y_channel": "ETASP",
+      "units": "",
+      "comment": ""
+    },
+    {
+      "name": "AI_50_BG_1_1",
+      "csv_file": "C:/Users/BRM1511/OneDrive - FEV Group GmbH/Atividades T3/Problema ADV OPT H20 2025 AGOSTO/715096_A04_E0 92RON_000071_3.52197_BIGGRID_REDUZIDO_ECT60.csv",
+      "x_column": "RPM",
+      "y_column": "ETASP",
+      "z_column": "A_I50_1",
+      "vehicle_x_channel": "RPMX1",
+      "vehicle_y_channel": "ETASP",
+      "units": "",
+      "comment": ""
+    },
+    {
+      "name": "AI_50_BG_1_copy_copy_copy",
+      "csv_file": "C:/Users/BRM1511/OneDrive - FEV Group GmbH/Atividades T3/Problema ADV OPT H20 2025 AGOSTO/715096_A04_E0 92RON_000071_3.52197_BIGGRID_REDUZIDO_ECT60.csv",
+      "x_column": "RPM",
+      "y_column": "ETASP",
+      "z_column": "A_I50_1",
+      "vehicle_x_channel": "RPMX1",
+      "vehicle_y_channel": "ETASP",
+      "units": "",
+      "comment": ""
+    },
+    {
+      "name": "AI_50_BG_1_1_copy",
+      "csv_file": "C:/Users/BRM1511/OneDrive - FEV Group GmbH/Atividades T3/Problema ADV OPT H20 2025 AGOSTO/715096_A04_E0 92RON_000071_3.52197_BIGGRID_REDUZIDO_ECT60.csv",
+      "x_column": "RPM",
+      "y_column": "ETASP",
+      "z_column": "A_I50_1",
+      "vehicle_x_channel": "RPMX1",
+      "vehicle_y_channel": "ETASP",
+      "units": "",
+      "comment": ""
+    },
+    {
+      "name": "AI_50_BG_1_copy_copy_copy_1",
+      "csv_file": "C:/Users/BRM1511/OneDrive - FEV Group GmbH/Atividades T3/Problema ADV OPT H20 2025 AGOSTO/715096_A04_E0 92RON_000071_3.52197_BIGGRID_REDUZIDO_ECT60.csv",
+      "x_column": "RPM",
+      "y_column": "ETASP",
+      "z_column": "A_I50_1",
+      "vehicle_x_channel": "RPMX1",
+      "vehicle_y_channel": "ETASP",
+      "units": "",
+      "comment": ""
+    },
+    {
+      "name": "AI_50_BG_1_1_copy_1",
+      "csv_file": "C:/Users/BRM1511/OneDrive - FEV Group GmbH/Atividades T3/Problema ADV OPT H20 2025 AGOSTO/715096_A04_E0 92RON_000071_3.52197_BIGGRID_REDUZIDO_ECT60.csv",
+      "x_column": "RPM",
+      "y_column": "ETASP",
+      "z_column": "A_I50_1",
+      "vehicle_x_channel": "RPMX1",
+      "vehicle_y_channel": "ETASP",
+      "units": "",
+      "comment": ""
+    },
+    {
+      "name": "AI_50_BG_1_copy_copy_copy_copy",
+      "csv_file": "C:/Users/BRM1511/OneDrive - FEV Group GmbH/Atividades T3/Problema ADV OPT H20 2025 AGOSTO/715096_A04_E0 92RON_000071_3.52197_BIGGRID_REDUZIDO_ECT60.csv",
+      "x_column": "RPM",
+      "y_column": "ETASP",
+      "z_column": "A_I50_1",
+      "vehicle_x_channel": "RPMX1",
+      "vehicle_y_channel": "ETASP",
+      "units": "",
+      "comment": ""
+    },
+    {
+      "name": "AI_50_BG_1_copy_copy_copy_1_copy_copy",
+      "csv_file": "C:/Users/BRM1511/OneDrive - FEV Group GmbH/Atividades T3/Problema ADV OPT H20 2025 AGOSTO/715096_A04_E0 92RON_000071_3.52197_BIGGRID_REDUZIDO_ECT60.csv",
+      "x_column": "RPM",
+      "y_column": "ETASP",
+      "z_column": "A_I50_1",
       "vehicle_x_channel": "RPMX1",
       "vehicle_y_channel": "ETASP",
       "units": "",
@@ -38,9 +115,6 @@
   "output_format": "mf4",
   "theme": "Light",
   "slot_names": {
-    "1": "Slot 1",
-    "2": "Slot 2",
-    "3": "Slot 3",
     "1": "Slot 1",
     "2": "Slot 2",
     "3": "Slot 3"
@@ -57,5 +131,5 @@
     "comment": "",
     "preserve_settings": true
   },
-  "saved_at": "2025-08-11T13:56:13.804540"
+  "saved_at": "2025-08-11T14:50:29.119366"
 }

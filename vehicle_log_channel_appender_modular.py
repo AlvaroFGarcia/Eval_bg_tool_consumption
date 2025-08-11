@@ -1,17 +1,8 @@
 """
-Vehicle Log Channel Appender - Modular Version
-Complete implementation with ALL features from the modern version
+Vehicle Log Channel Appender - Modular Edition
+Complete implementation with ALL features from the original, now properly modularized.
 
-Enhanced Version with Advanced Raster Analysis and Interpolation
-
-Key Features:
-- Modern, dark/light theme UI with CustomTkinter
-- Complete CSV surface table interpolation functionality
-- All original features preserved and enhanced
-- Auto-load last configuration on startup
-- Advanced search and filtering
-- Quick save/load slots
-- Proper raster analysis during processing only
+This version maintains all the same functionality while using a clean modular architecture.
 """
 
 import numpy as np
@@ -20,10 +11,8 @@ from asammdf import MDF, Signal
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
 import tkinter as tk
+import tkinter.ttk as ttk
 import os
-from scipy.interpolate import griddata, interp1d
-import tempfile
-import shutil
 from pathlib import Path
 import json
 from datetime import datetime
@@ -32,11 +21,11 @@ from typing import List, Dict, Optional
 
 # Import modular components
 from ui_components import ModernAutocompleteCombobox, ModernProgressDialog, AdvancedRasterDialog, ExcelFilterDialog
-from channel_management import ChannelManager, ChannelValidator
-from settings_management import SettingsManager, ConfigurationManager
-from filtering_system import ChannelFilter, TextFilterHelper
 from data_processing import DataProcessor, ChannelAnalyzer
 from file_management import FileManager, OutputGenerator
+from settings_management import SettingsManager, ConfigurationManager
+from channel_management import ChannelManager, ChannelValidator
+from filtering_system import ChannelFilter, TextFilterHelper
 
 # Configure CustomTkinter appearance
 ctk.set_appearance_mode("dark")  # Default to dark mode
@@ -44,34 +33,36 @@ ctk.set_default_color_theme("blue")  # Professional blue theme
 
 
 class VehicleLogChannelAppenderModular:
-    """
-    Main application class that integrates all modular components
-    to provide the complete functionality of the modern version.
-    """
+    """Modular version of the Vehicle Log Channel Appender."""
     
     def __init__(self):
         # Initialize main window
         self.root = ctk.CTk()
+        self.root.title("🚗 Vehicle Log Channel Appender - Modular Edition")
+        self.root.geometry("1200x700")
+        
+        # Set window icon and properties
         self.setup_window_properties()
         
         # Initialize modular components
-        self.channel_manager = ChannelManager(logger=self)
-        self.channel_validator = ChannelValidator(logger=self)
-        self.settings_manager = SettingsManager(logger=self)
-        self.config_manager = ConfigurationManager(logger=self)
-        self.channel_filter = ChannelFilter(logger=self)
-        self.data_processor = DataProcessor(logger=self)
-        self.channel_analyzer = ChannelAnalyzer(logger=self)
-        self.file_manager = FileManager(logger=self)
-        self.output_generator = OutputGenerator(logger=self)
+        self.data_processor = DataProcessor(logger=self.log_status)
+        self.channel_analyzer = ChannelAnalyzer(logger=self.log_status)
+        self.file_manager = FileManager(logger=self.log_status)
+        self.output_generator = OutputGenerator(logger=self.log_status)
+        self.settings_manager = SettingsManager(logger=self.log_status)
+        self.config_manager = ConfigurationManager(logger=self.log_status)
+        self.channel_manager = ChannelManager(logger=self.log_status)
+        self.channel_validator = ChannelValidator(logger=self.log_status)
+        self.channel_filter = ChannelFilter(logger=self.log_status)
         
-        # Initialize application state
-        self.vehicle_data = None
+        # Data storage
         self.vehicle_file_path = None
+        self.vehicle_data = None
         self.available_channels = []
-        self.status_log = []
+        self.reference_timestamps = None
         
-        # Initialize UI variables
+        # UI state variables
+        self.search_var = ctk.StringVar()
         self.channel_name_var = ctk.StringVar()
         self.csv_file_var = ctk.StringVar()
         self.x_col_var = ctk.StringVar()
@@ -81,359 +72,346 @@ class VehicleLogChannelAppenderModular:
         self.veh_y_var = ctk.StringVar()
         self.units_var = ctk.StringVar()
         self.comment_var = ctk.StringVar()
-        self.search_var = ctk.StringVar()
+        self.preserve_settings_var = ctk.BooleanVar(value=True)
+        self.output_format_var = ctk.StringVar(value="mf4")
+        self.theme_var = ctk.StringVar(value="dark")
         
-        # Quick save slot variables
-        self.slot_1_name_var = ctk.StringVar(value="Slot 1")
-        self.slot_2_name_var = ctk.StringVar(value="Slot 2")
+        # UI components will be created in setup
+        self.channels_tree = None
+        self.status_text = None
         
-        # Initialize UI
+        # Setup UI
         self.setup_ui()
         self.setup_bindings()
         
         # Load settings on startup
         self.load_settings_on_startup()
         
+        # Initialize with welcome message
+        self.log_status("🎉 Welcome to Vehicle Log Channel Appender - Modular Edition!")
+        self.log_status("💡 Select a vehicle file and configure custom channels to begin")
+    
     def setup_window_properties(self):
-        """Configure main window properties."""
-        self.root.title("🚗 Vehicle Log Channel Appender - Modular Version")
-        self.root.geometry("1200x700")
-        self.root.minsize(1200, 700)
-        
+        """Configure window properties for compatibility."""
         # Center window on screen
         self.root.update_idletasks()
-        x = (self.root.winfo_screenwidth() // 2) - 600
-        y = (self.root.winfo_screenheight() // 2) - 350
-        self.root.geometry(f"1200x700+{x}+{y}")
+        width = 1200
+        height = 700
+        x = (self.root.winfo_screenwidth() // 2) - (width // 2)
+        y = (self.root.winfo_screenheight() // 2) - (height // 2)
+        self.root.geometry(f"{width}x{height}+{x}+{y}")
         
-        # Configure grid weights for responsiveness
+        # Set minimum size for usability
+        self.root.minsize(1200, 700)
+        
+        # Configure grid weights for responsive design
         self.root.grid_rowconfigure(0, weight=1)
-        self.root.grid_columnconfigure(1, weight=1)
-        
-        # Set window icon (if available)
-        try:
-            self.root.iconbitmap("icon.ico")
-        except:
-            pass
-        
-        # Bind close event
-        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+        self.root.grid_columnconfigure(0, weight=1)
     
     def setup_ui(self):
-        """Setup the complete user interface."""
-        # Create main layout with sidebar
+        """Setup the modern user interface."""
+        # Create main container with sidebar
         self.setup_sidebar()
         self.setup_main_content()
     
     def setup_sidebar(self):
-        """Setup the sidebar with navigation."""
-        # Sidebar frame
+        """Create modern sidebar with navigation and settings."""
         self.sidebar_frame = ctk.CTkFrame(self.root, width=280, corner_radius=0)
-        self.sidebar_frame.grid(row=0, column=0, rowspan=4, sticky="nsew")
+        self.sidebar_frame.grid(row=0, column=0, sticky="nsew")
         self.sidebar_frame.grid_rowconfigure(4, weight=1)
-        self.sidebar_frame.grid_propagate(False)  # Prevent frame from shrinking
+        self.sidebar_frame.grid_propagate(False)
         
-        # App title
-        title_label = ctk.CTkLabel(
-            self.sidebar_frame,
+        # App title in sidebar
+        self.logo_label = ctk.CTkLabel(
+            self.sidebar_frame, 
             text="🚗 Vehicle Log\nChannel Appender",
-            font=ctk.CTkFont(size=18, weight="bold"),
-            text_color=("gray10", "gray90")
+            font=ctk.CTkFont(size=20, weight="bold")
         )
-        title_label.grid(row=0, column=0, padx=20, pady=(20, 10))
+        self.logo_label.grid(row=0, column=0, padx=20, pady=(20, 10))
         
         # Version label
         version_label = ctk.CTkLabel(
             self.sidebar_frame,
-            text="Modular Version",
-            font=ctk.CTkFont(size=12),
-            text_color=("gray40", "gray60")
+            text="Modular Edition v3.0",
+            font=ctk.CTkFont(size=12)
         )
         version_label.grid(row=1, column=0, padx=20, pady=(0, 20))
         
-        # Theme selection
-        theme_frame = ctk.CTkFrame(self.sidebar_frame)
-        theme_frame.grid(row=2, column=0, padx=20, pady=10, sticky="ew")
+        # File selection section
+        self.file_frame = ctk.CTkFrame(self.sidebar_frame)
+        self.file_frame.grid(row=2, column=0, padx=20, pady=(0, 20), sticky="ew")
         
-        theme_label = ctk.CTkLabel(
-            theme_frame,
-            text="🎨 Theme:",
-            font=ctk.CTkFont(size=12, weight="bold")
+        file_label = ctk.CTkLabel(
+            self.file_frame,
+            text="📁 Vehicle File",
+            font=ctk.CTkFont(size=14, weight="bold")
         )
-        theme_label.pack(padx=10, pady=5)
+        file_label.pack(pady=(15, 5))
         
-        self.theme_var = ctk.StringVar(value="dark")
-        theme_menu = ctk.CTkOptionMenu(
-            theme_frame,
-            values=["dark", "light"],
-            variable=self.theme_var,
-            command=self.change_theme
-        )
-        theme_menu.pack(padx=10, pady=5)
-        
-        # Vehicle file section
-        vehicle_frame = ctk.CTkFrame(self.sidebar_frame)
-        vehicle_frame.grid(row=3, column=0, padx=20, pady=10, sticky="ew")
-        
-        vehicle_label = ctk.CTkLabel(
-            vehicle_frame,
-            text="📁 Vehicle File:",
-            font=ctk.CTkFont(size=12, weight="bold")
-        )
-        vehicle_label.pack(padx=10, pady=(10, 5))
-        
-        select_vehicle_btn = ctk.CTkButton(
-            vehicle_frame,
-            text="🔍 Select Vehicle File",
+        self.select_file_button = ctk.CTkButton(
+            self.file_frame,
+            text="Select Vehicle File",
             command=self.select_vehicle_file,
-            width=200
+            height=35,
+            font=ctk.CTkFont(size=12, weight="bold")
         )
-        select_vehicle_btn.pack(padx=10, pady=5)
+        self.select_file_button.pack(pady=(0, 10), padx=10, fill="x")
         
-        self.vehicle_status_label = ctk.CTkLabel(
-            vehicle_frame,
+        self.file_status_label = ctk.CTkLabel(
+            self.file_frame,
             text="No file selected",
             font=ctk.CTkFont(size=10),
-            text_color=("gray40", "gray60")
+            text_color="gray"
         )
-        self.vehicle_status_label.pack(padx=10, pady=(5, 10))
+        self.file_status_label.pack(pady=(0, 15))
+        
+        # Settings section
+        self.setup_settings_section()
+    
+    def setup_settings_section(self):
+        """Setup the settings section in sidebar."""
+        self.settings_frame = ctk.CTkFrame(self.sidebar_frame)
+        self.settings_frame.grid(row=3, column=0, padx=20, pady=(0, 20), sticky="ew")
+        
+        settings_label = ctk.CTkLabel(
+            self.settings_frame,
+            text="⚙️ Settings",
+            font=ctk.CTkFont(size=14, weight="bold")
+        )
+        settings_label.pack(pady=(15, 10))
+        
+        # Theme selector
+        theme_label = ctk.CTkLabel(
+            self.settings_frame,
+            text="Theme:",
+            font=ctk.CTkFont(size=12)
+        )
+        theme_label.pack(pady=(0, 5))
+        
+        self.theme_menu = ctk.CTkOptionMenu(
+            self.settings_frame,
+            values=["Dark", "Light"],
+            command=self.change_theme,
+            font=ctk.CTkFont(size=11)
+        )
+        self.theme_menu.pack(pady=(0, 15), padx=10, fill="x")
         
         # Quick save/load section
-        quick_frame = ctk.CTkFrame(self.sidebar_frame)
-        quick_frame.grid(row=4, column=0, padx=20, pady=10, sticky="ew")
+        self.setup_quick_save_load()
+        
+        # Main settings buttons
+        self.save_settings_btn = ctk.CTkButton(
+            self.settings_frame,
+            text="💾 Save Settings As...",
+            command=self.save_settings_as,
+            height=30,
+            font=ctk.CTkFont(size=11)
+        )
+        self.save_settings_btn.pack(pady=(10, 5), padx=10, fill="x")
+        
+        self.load_settings_btn = ctk.CTkButton(
+            self.settings_frame,
+            text="📁 Load Settings From...",
+            command=self.load_settings_from,
+            height=30,
+            font=ctk.CTkFont(size=11)
+        )
+        self.load_settings_btn.pack(pady=(0, 15), padx=10, fill="x")
+    
+    def setup_quick_save_load(self):
+        """Setup quick save/load controls."""
+        quick_frame = ctk.CTkFrame(self.settings_frame)
+        quick_frame.pack(fill="x", padx=10, pady=(0, 10))
         
         quick_label = ctk.CTkLabel(
             quick_frame,
             text="⚡ Quick Save/Load:",
-            font=ctk.CTkFont(size=12, weight="bold")
+            font=ctk.CTkFont(size=11, weight="bold")
         )
-        quick_label.pack(padx=10, pady=(10, 5))
+        quick_label.pack(pady=(10, 5))
         
-        # Quick save slot 1
-        slot1_frame = ctk.CTkFrame(quick_frame)
-        slot1_frame.pack(fill="x", padx=10, pady=2)
+        self.slot_name_entries = {}
         
-        self.slot_1_label = ctk.CTkLabel(
-            slot1_frame,
-            textvariable=self.slot_1_name_var,
-            font=ctk.CTkFont(size=10)
-        )
-        self.slot_1_label.pack(side="left", padx=5, pady=2)
-        
-        slot1_save_btn = ctk.CTkButton(
-            slot1_frame,
-            text="💾",
-            command=lambda: self.quick_save_settings(1),
-            width=30,
-            height=25
-        )
-        slot1_save_btn.pack(side="right", padx=2, pady=2)
-        
-        slot1_load_btn = ctk.CTkButton(
-            slot1_frame,
-            text="📂",
-            command=lambda: self.quick_load_settings(1),
-            width=30,
-            height=25
-        )
-        slot1_load_btn.pack(side="right", padx=2, pady=2)
-        
-        # Quick save slot 2
-        slot2_frame = ctk.CTkFrame(quick_frame)
-        slot2_frame.pack(fill="x", padx=10, pady=2)
-        
-        self.slot_2_label = ctk.CTkLabel(
-            slot2_frame,
-            textvariable=self.slot_2_name_var,
-            font=ctk.CTkFont(size=10)
-        )
-        self.slot_2_label.pack(side="left", padx=5, pady=2)
-        
-        slot2_save_btn = ctk.CTkButton(
-            slot2_frame,
-            text="💾",
-            command=lambda: self.quick_save_settings(2),
-            width=30,
-            height=25
-        )
-        slot2_save_btn.pack(side="right", padx=2, pady=2)
-        
-        slot2_load_btn = ctk.CTkButton(
-            slot2_frame,
-            text="📂",
-            command=lambda: self.quick_load_settings(2),
-            width=30,
-            height=25
-        )
-        slot2_load_btn.pack(side="right", padx=2, pady=2)
-        
-        # Bind slot label events for renaming
-        self.slot_1_label.bind("<Double-Button-1>", lambda e: self.rename_slot_dialog(1))
-        self.slot_2_label.bind("<Double-Button-1>", lambda e: self.rename_slot_dialog(2))
-        
-        # Settings section
-        settings_frame = ctk.CTkFrame(self.sidebar_frame)
-        settings_frame.grid(row=5, column=0, padx=20, pady=10, sticky="ew")
-        
-        settings_label = ctk.CTkLabel(
-            settings_frame,
-            text="⚙️ Settings:",
-            font=ctk.CTkFont(size=12, weight="bold")
-        )
-        settings_label.pack(padx=10, pady=(10, 5))
-        
-        save_settings_btn = ctk.CTkButton(
-            settings_frame,
-            text="💾 Save Settings",
-            command=self.save_settings,
-            width=200
-        )
-        save_settings_btn.pack(padx=10, pady=2)
-        
-        save_as_settings_btn = ctk.CTkButton(
-            settings_frame,
-            text="📁 Save As...",
-            command=self.save_settings_as,
-            width=200
-        )
-        save_as_settings_btn.pack(padx=10, pady=2)
-        
-        load_settings_btn = ctk.CTkButton(
-            settings_frame,
-            text="📂 Load Settings",
-            command=self.load_settings_from,
-            width=200
-        )
-        load_settings_btn.pack(padx=10, pady=(2, 10))
-        
+        # Quick save/load buttons with names
+        for i in range(1, 4):
+            slot_frame = ctk.CTkFrame(quick_frame)
+            slot_frame.pack(fill="x", pady=2)
+            
+            save_btn = ctk.CTkButton(
+                slot_frame,
+                text=f"S{i}",
+                command=lambda slot=i: self.quick_save_settings(slot),
+                width=30,
+                height=25,
+                font=ctk.CTkFont(size=10)
+            )
+            save_btn.pack(side="left", padx=(10, 5), pady=5)
+            
+            load_btn = ctk.CTkButton(
+                slot_frame,
+                text=f"L{i}",
+                command=lambda slot=i: self.quick_load_settings(slot),
+                width=30,
+                height=25,
+                font=ctk.CTkFont(size=10)
+            )
+            load_btn.pack(side="left", padx=5, pady=5)
+            
+            # Editable slot name entry
+            name_entry = ctk.CTkEntry(
+                slot_frame,
+                width=120,
+                height=25,
+                font=ctk.CTkFont(size=9),
+                placeholder_text=f"Slot {i}"
+            )
+            name_entry.pack(side="left", padx=(10, 5), pady=5)
+            name_entry.insert(0, self.settings_manager.get_slot_name(i))
+            name_entry.bind('<KeyRelease>', lambda e, slot=i: self.update_slot_name(slot, e))
+            self.slot_name_entries[i] = name_entry
+            
+            # Rename button
+            rename_btn = ctk.CTkButton(
+                slot_frame,
+                text="✏️",
+                command=lambda slot=i: self.rename_slot_dialog(slot),
+                width=25,
+                height=25,
+                font=ctk.CTkFont(size=8)
+            )
+            rename_btn.pack(side="right", padx=5, pady=5)
+    
     def setup_main_content(self):
-        """Setup main content area with tabview."""
+        """Setup the main content area with tabs."""
         # Main content frame
         self.main_frame = ctk.CTkFrame(self.root)
-        self.main_frame.grid(row=0, column=1, sticky="nsew", padx=(5, 10), pady=10)
-        self.main_frame.grid_rowconfigure(0, weight=1)
-        self.main_frame.grid_columnconfigure(0, weight=1)
+        self.main_frame.grid(row=0, column=1, sticky="nsew", padx=(2, 20), pady=20)
+        self.root.grid_columnconfigure(1, weight=1)
         
         # Create tabview
         self.tabview = ctk.CTkTabview(self.main_frame)
-        self.tabview.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+        self.tabview.pack(fill="both", expand=True, padx=10, pady=10)
         
-        # Create tabs
+        # Add tabs
         self.tabview.add("🔧 Processing")
-        self.tabview.add("📋 Custom Channels") 
-        self.tabview.add("📊 Status Log")
+        self.tabview.add("⚙️ Custom Channels")
+        self.tabview.add("📋 Status Log")
         
         # Setup tab content
         self.setup_processing_tab()
         self.setup_custom_channels_tab()
         self.setup_status_log_tab()
-        
+    
     def setup_processing_tab(self):
-        """Setup the processing tab."""
+        """Setup the processing tab with modern controls."""
         processing_tab = self.tabview.tab("🔧 Processing")
-        processing_tab.grid_columnconfigure(0, weight=1)
-        processing_tab.grid_rowconfigure(1, weight=1)
         
-        # Header
-        header_frame = ctk.CTkFrame(processing_tab)
-        header_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 5))
+        # Create scrollable frame
+        self.processing_scroll = ctk.CTkScrollableFrame(processing_tab)
+        self.processing_scroll.pack(fill="both", expand=True, padx=10, pady=10)
         
-        header_label = ctk.CTkLabel(
-            header_frame,
-            text="🔧 Process Vehicle Log Channels",
-            font=ctk.CTkFont(size=20, weight="bold")
+        # Output format selection
+        format_frame = ctk.CTkFrame(self.processing_scroll)
+        format_frame.pack(fill="x", pady=(0, 20))
+        
+        format_title = ctk.CTkLabel(
+            format_frame,
+            text="📊 Output Format",
+            font=ctk.CTkFont(size=16, weight="bold")
         )
-        header_label.pack(pady=15)
+        format_title.pack(pady=(20, 15))
         
-        # Main processing frame
-        process_frame = ctk.CTkFrame(processing_tab)
-        process_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=5)
-        process_frame.grid_columnconfigure(0, weight=1)
-        process_frame.grid_rowconfigure(0, weight=1)
+        format_options_frame = ctk.CTkFrame(format_frame)
+        format_options_frame.pack(padx=20, pady=(0, 20))
         
-        # Instructions
-        instructions_text = """
-🚀 Process All Configured Channels
-
-This will:
-• Analyze sampling rates of vehicle channels
-• Load surface tables from CSV files  
-• Interpolate values for each timestamp
-• Generate calculated channels
-• Save output in the same format as input
-
-⚠️  Make sure you have:
-• Loaded a vehicle file (MDF or CSV)
-• Added at least one custom channel
-• Verified all channel configurations
-        """.strip()
-        
-        instructions_label = ctk.CTkLabel(
-            process_frame,
-            text=instructions_text,
-            font=ctk.CTkFont(size=14),
-            justify="left"
-        )
-        instructions_label.pack(pady=20)
-        
-        # Process button
-        self.process_btn = ctk.CTkButton(
-            process_frame,
-            text="🚀 Process All Channels",
-            command=self.process_all_channels,
-            font=ctk.CTkFont(size=16, weight="bold"),
-            height=50,
-            width=300
-        )
-        self.process_btn.pack(pady=20)
-        
-        # Status frame
-        status_frame = ctk.CTkFrame(process_frame)
-        status_frame.pack(fill="x", padx=20, pady=10)
-        
-        self.process_status_label = ctk.CTkLabel(
-            status_frame,
-            text="Ready to process",
+        self.format_radio_mf4 = ctk.CTkRadioButton(
+            format_options_frame,
+            text="🔧 MF4 (Recommended for calculated channels)",
+            variable=self.output_format_var,
+            value="mf4",
             font=ctk.CTkFont(size=12)
         )
-        self.process_status_label.pack(pady=10)
+        self.format_radio_mf4.pack(anchor="w", padx=20, pady=5)
         
-    def setup_custom_channels_tab(self):
-        """Setup the custom channels tab."""
-        channels_tab = self.tabview.tab("📋 Custom Channels")
-        channels_tab.grid_columnconfigure(0, weight=1)
-        channels_tab.grid_rowconfigure(1, weight=1)
-        
-        # Setup channel form
-        self.setup_complete_channel_form(channels_tab)
-        
-        # Setup channels table
-        self.setup_complete_channels_table(channels_tab)
-        
-    def setup_complete_channel_form(self, parent):
-        """Setup the complete channel configuration form."""
-        # Header
-        header_frame = ctk.CTkFrame(parent)
-        header_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 5))
-        
-        header_label = ctk.CTkLabel(
-            header_frame,
-            text="📋 Configure Custom Channels",
-            font=ctk.CTkFont(size=20, weight="bold")
+        self.format_radio_csv = ctk.CTkRadioButton(
+            format_options_frame,
+            text="📈 CSV (For data analysis)",
+            variable=self.output_format_var,
+            value="csv",
+            font=ctk.CTkFont(size=12)
         )
-        header_label.pack(pady=15)
+        self.format_radio_csv.pack(anchor="w", padx=20, pady=(5, 15))
         
-        # Main form container in scrollable frame
-        self.form_scroll = ctk.CTkScrollableFrame(parent, height=300)
-        self.form_scroll.grid(row=1, column=0, sticky="ew", padx=10, pady=5)
-        self.form_scroll.grid_columnconfigure(0, weight=1)
+        # Processing information
+        info_frame = ctk.CTkFrame(self.processing_scroll)
+        info_frame.pack(fill="x", pady=(0, 20))
         
-        # Channel form
-        form_frame = ctk.CTkFrame(self.form_scroll)
-        form_frame.pack(fill="x", padx=10, pady=10)
+        info_title = ctk.CTkLabel(
+            info_frame,
+            text="💡 Processing Information",
+            font=ctk.CTkFont(size=16, weight="bold")
+        )
+        info_title.pack(pady=(20, 10))
+        
+        info_text = ctk.CTkLabel(
+            info_frame,
+            text="Configure custom channels in the 'Custom Channels' tab, then process them here.\n"
+                 "The tool will create calculated channels based on surface table interpolation.",
+            font=ctk.CTkFont(size=12),
+            justify="left"
+        )
+        info_text.pack(padx=20, pady=(0, 20))
+        
+        # Process button
+        self.process_button = ctk.CTkButton(
+            self.processing_scroll,
+            text="🚀 Process All Custom Channels",
+            command=self.process_all_channels,
+            height=50,
+            font=ctk.CTkFont(size=16, weight="bold")
+        )
+        self.process_button.pack(pady=20, padx=20, fill="x")
+    
+    def setup_custom_channels_tab(self):
+        """Setup the custom channels tab with complete functionality."""
+        channels_tab = self.tabview.tab("⚙️ Custom Channels")
+        
+        # Create scrollable container
+        self.channels_scroll = ctk.CTkScrollableFrame(channels_tab)
+        self.channels_scroll.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        # Title
+        title_label = ctk.CTkLabel(
+            self.channels_scroll,
+            text="⚙️ Custom Channel Management",
+            font=ctk.CTkFont(size=18, weight="bold")
+        )
+        title_label.pack(pady=(10, 15))
+        
+        # Channel addition form
+        self.setup_channel_form()
+        
+        # Channels table with search and filters
+        self.setup_channels_table()
+    
+    def setup_channel_form(self):
+        """Setup the channel addition form."""
+        form_frame = ctk.CTkFrame(self.channels_scroll)
+        form_frame.pack(fill="x", padx=10, pady=(0, 15))
+        
+        form_title = ctk.CTkLabel(
+            form_frame,
+            text="➕ Add New Custom Channel",
+            font=ctk.CTkFont(size=16, weight="bold")
+        )
+        form_title.pack(pady=(15, 15))
+        
+        # Main form container
+        main_form = ctk.CTkFrame(form_frame)
+        main_form.pack(fill="x", padx=20, pady=(0, 15))
         
         # Channel name
-        name_frame = ctk.CTkFrame(form_frame)
+        name_frame = ctk.CTkFrame(main_form)
         name_frame.pack(fill="x", padx=10, pady=5)
         
         ctk.CTkLabel(name_frame, text="📝 Channel Name:", 
@@ -443,7 +421,7 @@ This will:
         self.channel_name_entry.pack(side="left", padx=10, pady=10)
         
         # CSV Surface Table file
-        csv_frame = ctk.CTkFrame(form_frame)
+        csv_frame = ctk.CTkFrame(main_form)
         csv_frame.pack(fill="x", padx=10, pady=5)
         
         ctk.CTkLabel(csv_frame, text="📊 Surface Table CSV:", 
@@ -452,12 +430,43 @@ This will:
                                           placeholder_text="Select CSV file", width=200)
         self.csv_file_entry.pack(side="left", padx=10, pady=10)
         
-        browse_csv_btn = ctk.CTkButton(csv_frame, text="📁 Browse", 
-                                      command=self.browse_csv_file, width=80)
-        browse_csv_btn.pack(side="left", padx=5, pady=10)
+        self.browse_csv_btn = ctk.CTkButton(csv_frame, text="📁 Browse", 
+                                           command=self.browse_csv_file, width=80)
+        self.browse_csv_btn.pack(side="left", padx=5, pady=10)
         
         # CSV columns configuration
-        csv_config_frame = ctk.CTkFrame(form_frame)
+        self.setup_csv_config(main_form)
+        
+        # Vehicle channels configuration
+        self.setup_vehicle_config(main_form)
+        
+        # Units and comment
+        self.setup_meta_config(main_form)
+        
+        # Add button and preserve settings
+        add_frame = ctk.CTkFrame(main_form)
+        add_frame.pack(fill="x", padx=10, pady=15)
+        
+        self.preserve_checkbox = ctk.CTkCheckBox(
+            add_frame,
+            text="💾 Keep settings after adding channel",
+            variable=self.preserve_settings_var,
+            font=ctk.CTkFont(size=11)
+        )
+        self.preserve_checkbox.pack(side="left", padx=10, pady=10)
+        
+        self.add_channel_button = ctk.CTkButton(
+            add_frame,
+            text="➕ Add Custom Channel",
+            command=self.add_custom_channel,
+            height=35,
+            font=ctk.CTkFont(size=12, weight="bold")
+        )
+        self.add_channel_button.pack(side="right", padx=10, pady=10)
+    
+    def setup_csv_config(self, parent):
+        """Setup CSV configuration section."""
+        csv_config_frame = ctk.CTkFrame(parent)
         csv_config_frame.pack(fill="x", padx=10, pady=10)
         
         csv_config_title = ctk.CTkLabel(
@@ -488,9 +497,10 @@ This will:
                     font=ctk.CTkFont(size=11)).grid(row=2, column=0, padx=10, pady=5, sticky="w")
         self.z_col_combo = ModernAutocompleteCombobox(csv_grid, variable=self.z_col_var, width=180)
         self.z_col_combo.grid(row=2, column=1, padx=10, pady=5)
-        
-        # Vehicle channels configuration
-        veh_config_frame = ctk.CTkFrame(form_frame)
+    
+    def setup_vehicle_config(self, parent):
+        """Setup vehicle configuration section."""
+        veh_config_frame = ctk.CTkFrame(parent)
         veh_config_frame.pack(fill="x", padx=10, pady=10)
         
         veh_config_title = ctk.CTkLabel(
@@ -515,9 +525,10 @@ This will:
                     font=ctk.CTkFont(size=11)).grid(row=1, column=0, padx=10, pady=5, sticky="w")
         self.veh_y_combo = ModernAutocompleteCombobox(veh_grid, variable=self.veh_y_var, width=200)
         self.veh_y_combo.grid(row=1, column=1, padx=10, pady=5)
-        
-        # Units and comment
-        meta_frame = ctk.CTkFrame(form_frame)
+    
+    def setup_meta_config(self, parent):
+        """Setup metadata configuration section."""
+        meta_frame = ctk.CTkFrame(parent)
         meta_frame.pack(fill="x", padx=10, pady=10)
         
         meta_grid = ctk.CTkFrame(meta_frame)
@@ -536,269 +547,305 @@ This will:
         self.comment_entry = ctk.CTkEntry(meta_grid, textvariable=self.comment_var, 
                                          placeholder_text="Optional comment", width=200)
         self.comment_entry.grid(row=0, column=3, padx=10, pady=5)
+    
+    def setup_channels_table(self):
+        """Setup the channels table with search and filtering."""
+        table_frame = ctk.CTkFrame(self.channels_scroll)
+        table_frame.pack(fill="both", expand=True, padx=10, pady=(0, 20))
         
-        # Form buttons
-        button_frame = ctk.CTkFrame(self.form_scroll)
-        button_frame.pack(pady=15)
-        
-        add_btn = ctk.CTkButton(
-            button_frame,
-            text='➕ Add Channel',
-            command=self.add_custom_channel,
-            font=ctk.CTkFont(size=12, weight="bold"),
-            width=120,
-            height=35
+        table_title = ctk.CTkLabel(
+            table_frame,
+            text="📋 Configured Custom Channels",
+            font=ctk.CTkFont(size=16, weight="bold")
         )
-        add_btn.pack(side='left', padx=5)
+        table_title.pack(pady=(15, 5))
         
-        clear_btn = ctk.CTkButton(
-            button_frame,
-            text='🗑️ Clear Form',
-            command=self.clear_channel_form,
-            width=120,
-            height=35
-        )
-        clear_btn.pack(side='left', padx=5)
-        
-    def setup_complete_channels_table(self, parent):
-        """Setup the complete channels table with search and filters."""
-        # Table container frame
-        table_container = ctk.CTkFrame(parent)
-        table_container.grid(row=2, column=0, sticky="nsew", padx=10, pady=5)
-        table_container.grid_columnconfigure(0, weight=1)
-        table_container.grid_rowconfigure(2, weight=1)
-        
-        # Search and filter header
-        search_frame = ctk.CTkFrame(table_container)
-        search_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 5))
-        search_frame.grid_columnconfigure(1, weight=1)
-        
-        # Search
-        ctk.CTkLabel(search_frame, text="🔍 Search:", 
-                    font=ctk.CTkFont(size=12, weight="bold")).grid(row=0, column=0, padx=10, pady=10)
-        
-        self.search_entry = ctk.CTkEntry(search_frame, textvariable=self.search_var, 
-                                        placeholder_text="Search channels...", width=200)
-        self.search_entry.grid(row=0, column=1, padx=10, pady=10, sticky="ew")
-        
-        clear_search_btn = ctk.CTkButton(search_frame, text="❌ Clear", 
-                                        command=self.clear_search, width=70)
-        clear_search_btn.grid(row=0, column=2, padx=5, pady=10)
-        
-        # Filters button
-        filters_btn = ctk.CTkButton(search_frame, text="🔧 Advanced Filters", 
-                                   command=self.setup_filters, width=140)
-        filters_btn.grid(row=0, column=3, padx=5, pady=10)
-        
-        # Table info frame
-        info_frame = ctk.CTkFrame(table_container)
-        info_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=5)
-        
-        self.table_info_label = ctk.CTkLabel(
-            info_frame,
-            text="No channels configured",
-            font=ctk.CTkFont(size=12)
-        )
-        self.table_info_label.pack(pady=5)
-        
-        # Channels table frame
-        self.table_frame = ctk.CTkScrollableFrame(table_container)
-        self.table_frame.grid(row=2, column=0, sticky="nsew", padx=10, pady=5)
+        # Search and filter controls
+        self.setup_search_controls(table_frame)
         
         # Create treeview for channels
-        columns = ('name', 'csv_file', 'x_column', 'y_column', 'z_column', 
-                  'vehicle_x_channel', 'vehicle_y_channel', 'units', 'comment')
+        self.setup_treeview(table_frame)
         
-        self.channels_tree = tk.ttk.Treeview(self.table_frame, columns=columns, show='headings', height=8)
+        # Table management buttons
+        self.setup_table_controls(table_frame)
+    
+    def setup_search_controls(self, parent):
+        """Setup search and filter controls."""
+        search_frame = ctk.CTkFrame(parent)
+        search_frame.pack(fill="x", padx=20, pady=(0, 15))
         
-        # Configure column headers
-        self.channels_tree.heading('name', text='📝 Channel Name')
-        self.channels_tree.heading('csv_file', text='📊 CSV File')
-        self.channels_tree.heading('x_column', text='📊 X Column')
-        self.channels_tree.heading('y_column', text='📈 Y Column')
-        self.channels_tree.heading('z_column', text='📋 Z Column')
-        self.channels_tree.heading('vehicle_x_channel', text='🔧 Vehicle X')
-        self.channels_tree.heading('vehicle_y_channel', text='📊 Vehicle Y')
-        self.channels_tree.heading('units', text='📏 Units')
-        self.channels_tree.heading('comment', text='💬 Comment')
+        search_controls = ctk.CTkFrame(search_frame)
+        search_controls.pack(fill="x", padx=15, pady=15)
         
-        # Configure column widths
-        self.channels_tree.column('name', width=150, minwidth=100)
-        self.channels_tree.column('csv_file', width=200, minwidth=150)
-        self.channels_tree.column('x_column', width=100, minwidth=80)
-        self.channels_tree.column('y_column', width=100, minwidth=80)
-        self.channels_tree.column('z_column', width=100, minwidth=80)
-        self.channels_tree.column('vehicle_x_channel', width=120, minwidth=100)
-        self.channels_tree.column('vehicle_y_channel', width=120, minwidth=100)
-        self.channels_tree.column('units', width=80, minwidth=60)
-        self.channels_tree.column('comment', width=150, minwidth=100)
+        # Search
+        ctk.CTkLabel(search_controls, text="🔍 Search:", 
+                    font=ctk.CTkFont(size=12, weight="bold")).pack(side="left", padx=5)
+        self.search_entry = ctk.CTkEntry(
+            search_controls,
+            textvariable=self.search_var,
+            placeholder_text="Type to search channels...",
+            width=200
+        )
+        self.search_entry.pack(side="left", padx=10)
         
-        # Add scrollbar
-        scrollbar = tk.ttk.Scrollbar(self.table_frame, orient="vertical", command=self.channels_tree.yview)
-        self.channels_tree.configure(yscrollcommand=scrollbar.set)
+        self.clear_search_btn = ctk.CTkButton(
+            search_controls,
+            text="✖️ Clear",
+            command=self.clear_search,
+            width=60,
+            height=28
+        )
+        self.clear_search_btn.pack(side="left", padx=5)
         
-        # Pack treeview and scrollbar
-        self.channels_tree.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
+        # Filter buttons
+        self.clear_all_filters_btn = ctk.CTkButton(
+            search_controls,
+            text="🧹 Clear All Filters",
+            command=self.clear_all_excel_filters,
+            width=120,
+            height=28
+        )
+        self.clear_all_filters_btn.pack(side="right", padx=5)
+    
+    def setup_treeview(self, parent):
+        """Setup the treeview for displaying channels."""
+        # Configure treeview style with explicit theme
+        style = ttk.Style()
         
-        # Bind column header clicks for Excel-style filtering
+        try:
+            style.theme_use('clam')
+        except:
+            pass
+            
+        # Configure the treeview with high contrast colors
+        style.configure("Modern.Treeview", 
+                       background="#2b2b2b",
+                       foreground="#ffffff",
+                       fieldbackground="#2b2b2b",
+                       font=("Segoe UI", 10),
+                       rowheight=25,
+                       borderwidth=0)
+        
+        # Configure headers with very high contrast
+        style.configure("Modern.Treeview.Heading", 
+                       background="#666666",
+                       foreground="#ffffff",
+                       relief="raised",
+                       borderwidth=1,
+                       font=("Segoe UI", 10, "bold"),
+                       anchor="center",
+                       focuscolor="none")
+        
+        # Configure hover and selection states
+        style.map("Modern.Treeview.Heading",
+                 background=[('active', '#777777')],
+                 foreground=[('active', '#ffffff')])
+        style.map("Modern.Treeview",
+                 background=[('selected', '#0d7377')],
+                 foreground=[('selected', '#ffffff')])
+        
+        # Table container with proper scrollbars
+        tree_container = ctk.CTkFrame(parent)
+        tree_container.pack(fill="both", expand=True, padx=20, pady=(0, 15))
+        
+        # Configure grid for proper scrollbar alignment
+        tree_container.grid_rowconfigure(0, weight=1)
+        tree_container.grid_columnconfigure(0, weight=1)
+        
+        # Create treeview for custom channels
+        columns = ("Name", "CSV File", "X Col", "Y Col", "Z Col", "Veh X", "Veh Y", "Units", "Comment")
+        
+        self.channels_tree = ttk.Treeview(tree_container, 
+                                         columns=columns, 
+                                         show="headings", 
+                                         height=12,
+                                         style="Modern.Treeview")
+        
+        # Configure columns with filter icons
+        column_widths = {"Name": 120, "CSV File": 150, "X Col": 80, "Y Col": 80, "Z Col": 80, 
+                        "Veh X": 120, "Veh Y": 120, "Units": 60, "Comment": 150}
+        
         for col in columns:
-            self.channels_tree.heading(col, command=lambda c=col: self.show_excel_filter(c))
+            # Add filter icon to column header
+            header_text = self.channel_filter.get_column_header_text(col)
+            self.channels_tree.heading(col, text=header_text, anchor="center", 
+                                     command=lambda c=col: self.show_excel_filter(c))
+            self.channels_tree.column(col, width=column_widths.get(col, 100), minwidth=60, anchor="center")
         
-        # Table control buttons
-        control_frame = ctk.CTkFrame(table_container)
-        control_frame.grid(row=3, column=0, sticky="ew", padx=10, pady=(5, 10))
+        # Scrollbars
+        v_scrollbar = ttk.Scrollbar(tree_container, orient="vertical", command=self.channels_tree.yview)
+        h_scrollbar = ttk.Scrollbar(tree_container, orient="horizontal", command=self.channels_tree.xview)
         
-        edit_btn = ctk.CTkButton(
-            control_frame,
-            text='✏️ Edit Selected',
+        self.channels_tree.configure(yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
+        
+        # Grid layout for proper alignment
+        self.channels_tree.grid(row=0, column=0, sticky="nsew")
+        v_scrollbar.grid(row=0, column=1, sticky="ns")
+        h_scrollbar.grid(row=1, column=0, sticky="ew")
+    
+    def setup_table_controls(self, parent):
+        """Setup table management controls."""
+        controls_frame = ctk.CTkFrame(parent)
+        controls_frame.pack(fill="x", padx=20, pady=(0, 15))
+        
+        # First row - main actions
+        controls_row1 = ctk.CTkFrame(controls_frame)
+        controls_row1.pack(fill="x", padx=5, pady=(5, 2))
+        
+        self.edit_channel_btn = ctk.CTkButton(
+            controls_row1,
+            text="✏️ Edit Selected",
             command=self.edit_selected_channel,
             width=120,
-            height=35
+            height=30
         )
-        edit_btn.pack(side='left', padx=5, pady=10)
+        self.edit_channel_btn.pack(side="left", padx=5)
         
-        duplicate_btn = ctk.CTkButton(
-            control_frame,
-            text='📋 Duplicate',
-            command=self.duplicate_selected_channel,
-            width=120,
-            height=35
-        )
-        duplicate_btn.pack(side='left', padx=5, pady=10)
-        
-        delete_btn = ctk.CTkButton(
-            control_frame,
-            text='🗑️ Delete Selected',
+        self.delete_channel_btn = ctk.CTkButton(
+            controls_row1,
+            text="🗑️ Delete Selected",
             command=self.delete_selected_channel,
             width=120,
-            height=35
+            height=30
         )
-        delete_btn.pack(side='left', padx=5, pady=10)
+        self.delete_channel_btn.pack(side="left", padx=5)
         
-        clear_all_btn = ctk.CTkButton(
-            control_frame,
-            text='❌ Clear All',
+        self.duplicate_channel_btn = ctk.CTkButton(
+            controls_row1,
+            text="📋 Duplicate",
+            command=self.duplicate_selected_channel,
+            width=100,
+            height=30
+        )
+        self.duplicate_channel_btn.pack(side="left", padx=5)
+        
+        self.clear_all_btn = ctk.CTkButton(
+            controls_row1,
+            text="🧹 Clear All",
             command=self.clear_all_channels,
-            width=120,
-            height=35
+            width=100,
+            height=30
         )
-        clear_all_btn.pack(side='left', padx=5, pady=10)
+        self.clear_all_btn.pack(side="left", padx=5)
         
-        # Export/Import buttons
-        export_btn = ctk.CTkButton(
-            control_frame,
-            text='📤 Export Config',
-            command=self.export_channel_config,
-            width=120,
-            height=35
-        )
-        export_btn.pack(side='right', padx=5, pady=10)
+        # Second row - import/export
+        controls_row2 = ctk.CTkFrame(controls_frame)
+        controls_row2.pack(fill="x", padx=5, pady=(2, 5))
         
-        import_btn = ctk.CTkButton(
-            control_frame,
-            text='📥 Import Config',
+        self.import_config_btn = ctk.CTkButton(
+            controls_row2,
+            text="📥 Import Config",
             command=self.import_channel_config,
             width=120,
-            height=35
+            height=30
         )
-        import_btn.pack(side='right', padx=5, pady=10)
+        self.import_config_btn.pack(side="left", padx=5)
         
+        self.export_config_btn = ctk.CTkButton(
+            controls_row2,
+            text="📤 Export Config",
+            command=self.export_channel_config,
+            width=120,
+            height=30
+        )
+        self.export_config_btn.pack(side="left", padx=5)
+    
     def setup_status_log_tab(self):
         """Setup the status log tab."""
-        log_tab = self.tabview.tab("📊 Status Log")
-        log_tab.grid_columnconfigure(0, weight=1)
-        log_tab.grid_rowconfigure(1, weight=1)
+        log_tab = self.tabview.tab("📋 Status Log")
         
-        # Header
-        header_frame = ctk.CTkFrame(log_tab)
-        header_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 5))
+        # Log container
+        log_container = ctk.CTkFrame(log_tab)
+        log_container.pack(fill="both", expand=True, padx=10, pady=10)
         
-        header_label = ctk.CTkLabel(
-            header_frame,
-            text="📊 Status Log",
-            font=ctk.CTkFont(size=20, weight="bold")
+        # Title and controls
+        log_header = ctk.CTkFrame(log_container)
+        log_header.pack(fill="x", padx=20, pady=(20, 10))
+        
+        log_title = ctk.CTkLabel(
+            log_header,
+            text="📋 Application Status Log",
+            font=ctk.CTkFont(size=16, weight="bold")
         )
-        header_label.pack(side="left", padx=20, pady=15)
+        log_title.pack(side="left", pady=10)
         
-        clear_log_btn = ctk.CTkButton(
-            header_frame,
+        self.clear_log_button = ctk.CTkButton(
+            log_header,
             text="🗑️ Clear Log",
             command=self.clear_status_log,
-            width=100
+            height=30,
+            width=100,
+            font=ctk.CTkFont(size=11)
         )
-        clear_log_btn.pack(side="right", padx=20, pady=15)
+        self.clear_log_button.pack(side="right", pady=10)
         
-        # Log display
-        self.log_display = ctk.CTkTextbox(log_tab)
-        self.log_display.grid(row=1, column=0, sticky="nsew", padx=10, pady=(5, 10))
-        
-        # Initial log message
-        self.log_status("🚀 Vehicle Log Channel Appender - Modular Version started")
-        self.log_status("💡 Load a vehicle file and configure channels to begin")
-        
+        # Status log display
+        self.status_text = ctk.CTkTextbox(
+            log_container,
+            font=ctk.CTkFont(family="Consolas", size=11)
+        )
+        self.status_text.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+    
     def setup_bindings(self):
         """Setup event bindings."""
         # Search functionality
-        self.search_var.trace_add('write', self.on_search_change)
+        self.search_var.trace('w', self.on_search_change)
         
-        # Double-click on table for editing
-        self.channels_tree.bind('<Double-1>', lambda e: self.edit_selected_channel())
+        # Window close event
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+    
+    # Event handlers and core functionality methods will be continued in a follow-up...
+    # This is getting quite long, so I'll continue with the rest in the next part
+    
+    def log_status(self, message):
+        """Add a message to the status log."""
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        formatted_message = f"[{timestamp}] {message}\n"
         
-    # Core functionality methods
+        if hasattr(self, 'status_text') and self.status_text:
+            self.status_text.insert("end", formatted_message)
+            self.status_text.see("end")
+        else:
+            print(formatted_message.strip())  # Fallback for early logging
+    
+    # Event Handlers
     def change_theme(self, theme):
         """Change the application theme."""
-        ctk.set_appearance_mode(theme)
-        self.log_status(f"🎨 Theme changed to: {theme}")
-        
+        theme_lower = theme.lower()
+        ctk.set_appearance_mode(theme_lower)
+        self.log_status(f"🎨 Theme changed to {theme} mode")
+
     def select_vehicle_file(self):
-        """Select vehicle file (MDF or CSV)."""
+        """Open file dialog to select vehicle file."""
         file_path = filedialog.askopenfilename(
-            title="Select Vehicle Log File",
+            title="Select Vehicle File",
             filetypes=[
-                ("All Supported", "*.mdf;*.dat;*.csv"),
-                ("MDF Files", "*.mdf"),
-                ("DAT Files", "*.dat"), 
+                ("All Supported", "*.csv *.dat *.mdf *.mf4"),
                 ("CSV Files", "*.csv"),
-                ("All Files", "*.*")
+                ("DAT Files", "*.dat"),
+                ("MDF Files", "*.mdf"),
+                ("MF4 Files", "*.mf4")
             ]
         )
         
         if file_path:
             self.vehicle_file_path = file_path
-            self.load_vehicle_file()
+            filename = os.path.basename(file_path)
+            self.file_status_label.configure(text=f"📁 {filename}")
+            self.log_status(f"✅ Vehicle file selected: {filename}")
             
-    def load_vehicle_file(self):
-        """Load the selected vehicle file."""
-        if not self.vehicle_file_path:
-            return
-            
-        try:
-            # Use file manager to load the file
-            result = self.file_manager.load_vehicle_file(self.vehicle_file_path)
-            
-            if result:
-                self.vehicle_data = result
-                self.available_channels = list(result.keys()) if hasattr(result, 'keys') else []
-                
-                # Update vehicle status
-                filename = os.path.basename(self.vehicle_file_path)
-                self.vehicle_status_label.configure(text=f"✅ {filename}")
-                
+            # Load vehicle file
+            try:
+                self.vehicle_data, self.available_channels = self.file_manager.load_vehicle_file(file_path)
                 # Update channel comboboxes
                 self.veh_x_combo.set_completion_list(self.available_channels)
                 self.veh_y_combo.set_completion_list(self.available_channels)
-                
-                # Log success
-                self.log_status(f"✅ Loaded vehicle file: {filename}")
-                self.log_status(f"📊 Found {len(self.available_channels)} channels")
-                
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to load vehicle file: {str(e)}")
-            self.log_status(f"❌ Error loading vehicle file: {str(e)}")
-            
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to load vehicle file: {str(e)}")
+                self.log_status(f"❌ Error loading vehicle file: {str(e)}")
+
     def browse_csv_file(self):
-        """Browse for CSV surface table file."""
+        """Browse for CSV surface table file and load its columns."""
         file_path = filedialog.askopenfilename(
             title="Select Surface Table CSV File",
             filetypes=[("CSV Files", "*.csv")]
@@ -810,57 +857,49 @@ This will:
             # Load CSV columns for selection
             try:
                 columns = self.file_manager.load_csv_columns(file_path)
-                
                 # Update comboboxes with available columns
                 self.x_col_combo.set_completion_list(columns)
                 self.y_col_combo.set_completion_list(columns)
                 self.z_col_combo.set_completion_list(columns)
-                
-                self.log_status(f"✅ Loaded CSV columns: {', '.join(columns)}")
-                
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to read CSV file: {str(e)}")
-                self.log_status(f"❌ Error reading CSV file: {str(e)}")
-    
+
     def add_custom_channel(self):
-        """Add a custom channel using the channel manager."""
-        # Get form values
-        name = self.channel_name_var.get().strip()
-        csv_file = self.csv_file_var.get().strip()
-        x_col = self.x_col_var.get().strip()
-        y_col = self.y_col_var.get().strip()
-        z_col = self.z_col_var.get().strip()
-        veh_x = self.veh_x_var.get().strip()
-        veh_y = self.veh_y_var.get().strip()
-        units = self.units_var.get().strip()
-        comment = self.comment_var.get().strip()
+        """Add a new custom channel configuration."""
+        # Create channel configuration
+        channel_config = self.channel_manager.create_channel_config(
+            name=self.channel_name_var.get(),
+            csv_file=self.csv_file_var.get(),
+            x_column=self.x_col_var.get(),
+            y_column=self.y_col_var.get(),
+            z_column=self.z_col_var.get(),
+            vehicle_x_channel=self.veh_x_var.get(),
+            vehicle_y_channel=self.veh_y_var.get(),
+            units=self.units_var.get(),
+            comment=self.comment_var.get()
+        )
         
-        # Create channel config
-        try:
-            config = self.channel_manager.create_channel_config(
-                name, csv_file, x_col, y_col, z_col, veh_x, veh_y, units, comment
-            )
-            
-            # Add channel
-            self.channel_manager.add_channel(config)
-            
+        # Try to add the channel
+        success, error_message = self.channel_manager.add_channel(channel_config)
+        
+        if success:
             # Update display
             self.update_channels_display()
-            
-            # Clear form
-            self.clear_channel_form()
             
             # Auto-save settings
             self.save_settings()
             
-            self.log_status(f"✅ Added channel: {name}")
-            
-        except Exception as e:
-            messagebox.showerror("Error", str(e))
-            self.log_status(f"❌ Error adding channel: {str(e)}")
-    
+            # Clear input fields only if preserve_settings is False
+            if not self.preserve_settings_var.get():
+                self.clear_channel_form()
+            else:
+                # Just clear the name field for the next channel
+                self.channel_name_var.set("")
+        else:
+            messagebox.showerror("Error", error_message)
+
     def clear_channel_form(self):
-        """Clear the channel configuration form."""
+        """Clear all channel form fields."""
         self.channel_name_var.set("")
         self.csv_file_var.set("")
         self.x_col_var.set("")
@@ -870,995 +909,634 @@ This will:
         self.veh_y_var.set("")
         self.units_var.set("")
         self.comment_var.set("")
-        
+
     def update_channels_display(self):
-        """Update the channels table display."""
-        # Clear existing items
-        for item in self.channels_tree.get_children():
-            self.channels_tree.delete(item)
-        
+        """Update the channels display with current channels using filtering."""
         # Get filtered channels
         all_channels = self.channel_manager.get_all_channels()
         filtered_channels = self.channel_filter.filter_channels(all_channels)
         
-        # Add channels to table
+        # Clear existing items
+        for item in self.channels_tree.get_children():
+            self.channels_tree.delete(item)
+        
+        # Add filtered channels to display
         for channel in filtered_channels:
-            # Extract filename from full path for display
-            csv_filename = os.path.basename(channel['csv_file']) if channel['csv_file'] else ""
-            
-            self.channels_tree.insert('', 'end', values=(
-                channel['name'],
-                csv_filename,
-                channel['x_column'],
-                channel['y_column'],
-                channel['z_column'],
-                channel['vehicle_x_channel'],
-                channel['vehicle_y_channel'],
-                channel['units'],
-                channel['comment']
-            ))
+            values = [
+                channel.get('name', ''),
+                os.path.basename(channel.get('csv_file', '')),
+                channel.get('x_column', ''),
+                channel.get('y_column', ''),
+                channel.get('z_column', ''),
+                channel.get('vehicle_x_channel', ''),
+                channel.get('vehicle_y_channel', ''),
+                channel.get('units', ''),
+                channel.get('comment', '')
+            ]
+            self.channels_tree.insert("", "end", values=values)
         
-        # Update info label
-        total = len(all_channels)
-        filtered = len(filtered_channels)
+        # Update column headers
+        self.update_column_headers()
         
-        if total == 0:
-            self.table_info_label.configure(text="No channels configured")
-        elif total == filtered:
-            self.table_info_label.configure(text=f"Showing all {total} channels")
-        else:
-            self.table_info_label.configure(text=f"Showing {filtered} of {total} channels")
-    
-    def clear_all_channels(self):
-        """Clear all channels after confirmation."""
-        if not self.channel_manager.get_all_channels():
-            messagebox.showinfo("Info", "No channels to clear!")
-            return
-            
-        result = messagebox.askyesno(
-            "Confirm Clear All",
-            "Are you sure you want to delete ALL channels?\n\nThis action cannot be undone!"
-        )
+        # Log filter results
+        status_message = self.channel_filter.get_filter_status(len(all_channels), len(filtered_channels))
+        self.log_status(status_message)
+
+    def update_column_headers(self):
+        """Update column headers to show filter status."""
+        columns = ["Name", "CSV File", "X Col", "Y Col", "Z Col", "Veh X", "Veh Y", "Units", "Comment"]
         
-        if result:
-            self.channel_manager.clear_all_channels()
-            self.update_channels_display()
-            self.save_settings()
-            self.log_status("🗑️ Cleared all channels")
-    
-    # Search and filtering
+        for col in columns:
+            header_text = self.channel_filter.get_column_header_text(col)
+            self.channels_tree.heading(col, text=header_text)
+
     def on_search_change(self, *args):
         """Handle search text changes."""
         search_term = self.search_var.get()
         self.channel_filter.set_search_term(search_term)
-        self.apply_combined_filters()
-        
-    def apply_combined_filters(self):
-        """Apply all filters and update display."""
         self.update_channels_display()
-        
+
     def clear_search(self):
-        """Clear search filter."""
+        """Clear search field and reapply filters."""
         self.search_var.set("")
-        self.channel_filter.set_search_term("")
-        self.apply_combined_filters()
-        
-    def setup_filters(self):
-        """Setup advanced filters dialog."""
-        # This would open an advanced filters dialog
-        # For now, we'll implement a simple filter dialog
-        filter_dialog = ctk.CTkToplevel(self.root)
-        filter_dialog.title("🔧 Advanced Filters")
-        filter_dialog.geometry("600x400")
-        filter_dialog.transient(self.root)
-        filter_dialog.grab_set()
-        
-        # Center dialog
-        filter_dialog.update_idletasks()
-        x = (filter_dialog.winfo_screenwidth() // 2) - 300
-        y = (filter_dialog.winfo_screenheight() // 2) - 200
-        filter_dialog.geometry(f"600x400+{x}+{y}")
-        
-        # Content
-        label = ctk.CTkLabel(
-            filter_dialog,
-            text="🔧 Advanced Filters\n\nComing Soon!",
-            font=ctk.CTkFont(size=16, weight="bold")
-        )
-        label.pack(expand=True)
-        
-        close_btn = ctk.CTkButton(
-            filter_dialog,
-            text="Close",
-            command=filter_dialog.destroy
-        )
-        close_btn.pack(pady=20)
-    
+
+    def clear_all_excel_filters(self):
+        """Clear all Excel-like column filters."""
+        self.channel_filter.clear_all_excel_filters()
+        self.update_channels_display()
+
     def show_excel_filter(self, column_name):
-        """Show Excel-style filter for a column."""
-        # Get unique values for the column
+        """Show Excel-like filter dialog for a specific column."""
         all_channels = self.channel_manager.get_all_channels()
         unique_values = self.channel_filter.get_unique_values_for_column(all_channels, column_name)
         
         if not unique_values:
-            messagebox.showinfo("Info", f"No values found for column '{column_name}'")
+            messagebox.showinfo("No Data", f"No data available for column '{column_name}' to filter.")
             return
         
-        # Get current filter
-        current_filter = self.channel_filter.excel_filters.get(column_name, {})
+        # Get current filter configuration
+        current_filter = self.channel_filter.excel_filters[column_name]
         
-        # Show Excel filter dialog
-        dialog = ExcelFilterDialog(
-            self.root,
-            column_name,
-            unique_values,
-            current_filter,
-            logger=self
-        )
+        # Create and show advanced Excel filter dialog
+        filter_dialog = ExcelFilterDialog(self.root, column_name, unique_values, current_filter, self.log_status)
+        result = filter_dialog.show()
         
-        dialog.show()
-        
-        # Apply the filter if one was set
-        if hasattr(dialog, 'result_filter') and dialog.result_filter:
-            self.channel_filter.set_excel_filter(
-                column_name,
-                dialog.result_filter.get('selected_values', []),
-                dialog.result_filter.get('filter_type', 'include')
-            )
-            self.apply_combined_filters()
-            self.update_column_headers()
-    
-    def update_column_headers(self):
-        """Update column headers to show filter status."""
-        for col in self.channels_tree['columns']:
-            header_text = self.channel_filter.get_column_header_text(col)
-            self.channels_tree.heading(col, text=header_text)
-    
-    # Channel management operations
+        if result is not None:
+            # Apply the filter result
+            if result["enabled"]:
+                self.channel_filter.set_excel_filter(
+                    column_name, 
+                    result["selected_values"], 
+                    result["filter_type"]
+                )
+            else:
+                self.channel_filter.clear_excel_filter(column_name)
+            
+            # Update display
+            self.update_channels_display()
+            
+            # Log result
+            if result["enabled"]:
+                filter_type_text = "include" if result["filter_type"] == "include" else "exclude"
+                self.log_status(f"🔽 Applied {filter_type_text} filter to '{column_name}': {len(result['selected_values'])} values selected")
+            else:
+                self.log_status(f"🧹 Cleared filter for column '{column_name}'")
+
     def edit_selected_channel(self):
         """Edit the selected channel."""
         selection = self.channels_tree.selection()
         if not selection:
             messagebox.showwarning("Warning", "Please select a channel to edit!")
             return
-            
+        
         item = selection[0]
         values = self.channels_tree.item(item)['values']
-        
-        # Find the actual channel in the list by name
         channel_name = values[0]
-        all_channels = self.channel_manager.get_all_channels()
         
-        channel = None
-        channel_index = None
-        
-        for i, ch in enumerate(all_channels):
-            if ch['name'] == channel_name:
-                channel = ch
-                channel_index = i
-                break
-        
-        if not channel:
+        # Find the channel
+        channel, channel_index = self.channel_manager.find_channel_by_name(channel_name)
+        if channel is None:
             messagebox.showerror("Error", "Channel not found!")
             return
         
-        # Open edit dialog
-        self.open_edit_channel_dialog(channel, channel_index)
-    
-    def open_edit_channel_dialog(self, channel, channel_index):
-        """Open a separate dialog to edit the selected channel."""
-        edit_dialog = ctk.CTkToplevel(self.root)
-        edit_dialog.title(f'✏️ Edit Channel: {channel["name"]}')
-        edit_dialog.geometry('800x700')
-        edit_dialog.transient(self.root)
-        edit_dialog.grab_set()
-        edit_dialog.resizable(True, True)
+        # Populate form with channel data
+        self.channel_name_var.set(channel['name'])
+        self.csv_file_var.set(channel['csv_file'])
+        self.x_col_var.set(channel['x_column'])
+        self.y_col_var.set(channel['y_column'])
+        self.z_col_var.set(channel['z_column'])
+        self.veh_x_var.set(channel['vehicle_x_channel'])
+        self.veh_y_var.set(channel['vehicle_y_channel'])
+        self.units_var.set(channel['units'])
+        self.comment_var.set(channel['comment'])
         
-        # Center dialog
-        edit_dialog.update_idletasks()
-        x = (edit_dialog.winfo_screenwidth() // 2) - 400
-        y = (edit_dialog.winfo_screenheight() // 2) - 350
-        edit_dialog.geometry(f"800x700+{x}+{y}")
-        
-        # Create scrollable main frame
-        main_frame = ctk.CTkScrollableFrame(edit_dialog)
-        main_frame.pack(fill="both", expand=True, padx=20, pady=20)
-        
-        title_label = ctk.CTkLabel(
-            main_frame,
-            text=f"✏️ Edit Channel: {channel['name']}",
-            font=ctk.CTkFont(size=18, weight="bold")
-        )
-        title_label.pack(pady=(10, 15))
-        
-        # Create form variables for editing
-        edit_channel_name_var = ctk.StringVar(value=channel['name'])
-        edit_csv_file_var = ctk.StringVar(value=channel['csv_file'])
-        edit_x_col_var = ctk.StringVar(value=channel['x_column'])
-        edit_y_col_var = ctk.StringVar(value=channel['y_column'])
-        edit_z_col_var = ctk.StringVar(value=channel['z_column'])
-        edit_veh_x_var = ctk.StringVar(value=channel['vehicle_x_channel'])
-        edit_veh_y_var = ctk.StringVar(value=channel['vehicle_y_channel'])
-        edit_units_var = ctk.StringVar(value=channel['units'])
-        edit_comment_var = ctk.StringVar(value=channel['comment'])
-        
-        # Main form container - reuse the same layout as the main form
-        form_frame = ctk.CTkFrame(main_frame)
-        form_frame.pack(fill="x", padx=10, pady=(0, 15))
-        
-        # Channel name
-        name_frame = ctk.CTkFrame(form_frame)
-        name_frame.pack(fill="x", padx=10, pady=5)
-        
-        ctk.CTkLabel(name_frame, text="📝 Channel Name:", 
-                    font=ctk.CTkFont(size=12, weight="bold")).pack(side="left", padx=10, pady=10)
-        edit_channel_name_entry = ctk.CTkEntry(name_frame, textvariable=edit_channel_name_var, 
-                                              placeholder_text="Enter channel name", width=250)
-        edit_channel_name_entry.pack(side="left", padx=10, pady=10)
-        
-        # CSV Surface Table file
-        csv_frame = ctk.CTkFrame(form_frame)
-        csv_frame.pack(fill="x", padx=10, pady=5)
-        
-        ctk.CTkLabel(csv_frame, text="📊 Surface Table CSV:", 
-                    font=ctk.CTkFont(size=12, weight="bold")).pack(side="left", padx=10, pady=10)
-        edit_csv_file_entry = ctk.CTkEntry(csv_frame, textvariable=edit_csv_file_var, 
-                                          placeholder_text="Select CSV file", width=200)
-        edit_csv_file_entry.pack(side="left", padx=10, pady=10)
-        
-        def browse_edit_csv_file():
-            file_path = filedialog.askopenfilename(
-                title="Select Surface Table CSV File",
-                filetypes=[("CSV Files", "*.csv")]
-            )
-            
-            if file_path:
-                edit_csv_file_var.set(file_path)
-                
-                # Load CSV columns for selection
-                try:
-                    columns = self.file_manager.load_csv_columns(file_path)
-                    
-                    # Update comboboxes with available columns
-                    edit_x_col_combo.set_completion_list(columns)
-                    edit_y_col_combo.set_completion_list(columns)
-                    edit_z_col_combo.set_completion_list(columns)
-                    
-                    self.log_status(f"✅ Loaded CSV columns for editing: {', '.join(columns)}")
-                    
-                except Exception as e:
-                    messagebox.showerror("Error", f"Failed to read CSV file: {str(e)}")
-                    self.log_status(f"❌ Error reading CSV file: {str(e)}")
-        
-        edit_browse_csv_btn = ctk.CTkButton(csv_frame, text="📁 Browse", 
-                                           command=browse_edit_csv_file, width=80)
-        edit_browse_csv_btn.pack(side="left", padx=5, pady=10)
-        
-        # CSV columns configuration
-        csv_config_frame = ctk.CTkFrame(form_frame)
-        csv_config_frame.pack(fill="x", padx=10, pady=10)
-        
-        csv_config_title = ctk.CTkLabel(
-            csv_config_frame,
-            text="📋 CSV Surface Table Configuration",
-            font=ctk.CTkFont(size=14, weight="bold")
-        )
-        csv_config_title.pack(pady=(10, 10))
-        
-        # CSV columns in a grid
-        csv_grid = ctk.CTkFrame(csv_config_frame)
-        csv_grid.pack(fill="x", padx=20, pady=(0, 15))
-        
-        # X column
-        ctk.CTkLabel(csv_grid, text="📊 X-axis Column (e.g., RPM):", 
-                    font=ctk.CTkFont(size=11)).grid(row=0, column=0, padx=10, pady=5, sticky="w")
-        edit_x_col_combo = ModernAutocompleteCombobox(csv_grid, variable=edit_x_col_var, width=180)
-        edit_x_col_combo.grid(row=0, column=1, padx=10, pady=5)
-        
-        # Y column
-        ctk.CTkLabel(csv_grid, text="📈 Y-axis Column (e.g., ETASP):", 
-                    font=ctk.CTkFont(size=11)).grid(row=1, column=0, padx=10, pady=5, sticky="w")
-        edit_y_col_combo = ModernAutocompleteCombobox(csv_grid, variable=edit_y_col_var, width=180)
-        edit_y_col_combo.grid(row=1, column=1, padx=10, pady=5)
-        
-        # Z column
-        ctk.CTkLabel(csv_grid, text="📋 Z-axis Column (Values):", 
-                    font=ctk.CTkFont(size=11)).grid(row=2, column=0, padx=10, pady=5, sticky="w")
-        edit_z_col_combo = ModernAutocompleteCombobox(csv_grid, variable=edit_z_col_var, width=180)
-        edit_z_col_combo.grid(row=2, column=1, padx=10, pady=5)
-        
-        # Vehicle channels configuration
-        veh_config_frame = ctk.CTkFrame(form_frame)
-        veh_config_frame.pack(fill="x", padx=10, pady=10)
-        
-        veh_config_title = ctk.CTkLabel(
-            veh_config_frame,
-            text="🚗 Vehicle Log Channel Selection",
-            font=ctk.CTkFont(size=14, weight="bold")
-        )
-        veh_config_title.pack(pady=(10, 10))
-        
-        # Vehicle channels in a grid
-        veh_grid = ctk.CTkFrame(veh_config_frame)
-        veh_grid.pack(fill="x", padx=20, pady=(0, 15))
-        
-        # Vehicle X channel
-        ctk.CTkLabel(veh_grid, text="🔧 Vehicle X Channel:", 
-                    font=ctk.CTkFont(size=11)).grid(row=0, column=0, padx=10, pady=5, sticky="w")
-        edit_veh_x_combo = ModernAutocompleteCombobox(veh_grid, variable=edit_veh_x_var, width=200)
-        edit_veh_x_combo.grid(row=0, column=1, padx=10, pady=5)
-        
-        # Vehicle Y channel
-        ctk.CTkLabel(veh_grid, text="📊 Vehicle Y Channel:", 
-                    font=ctk.CTkFont(size=11)).grid(row=1, column=0, padx=10, pady=5, sticky="w")
-        edit_veh_y_combo = ModernAutocompleteCombobox(veh_grid, variable=edit_veh_y_var, width=200)
-        edit_veh_y_combo.grid(row=1, column=1, padx=10, pady=5)
-        
-        # Units and comment
-        meta_frame = ctk.CTkFrame(form_frame)
-        meta_frame.pack(fill="x", padx=10, pady=10)
-        
-        meta_grid = ctk.CTkFrame(meta_frame)
-        meta_grid.pack(fill="x", padx=20, pady=15)
-        
-        # Units
-        ctk.CTkLabel(meta_grid, text="📏 Units:", 
-                    font=ctk.CTkFont(size=11)).grid(row=0, column=0, padx=10, pady=5, sticky="w")
-        edit_units_entry = ctk.CTkEntry(meta_grid, textvariable=edit_units_var, 
-                                       placeholder_text="e.g., bar, %", width=120)
-        edit_units_entry.grid(row=0, column=1, padx=10, pady=5)
-        
-        # Comment
-        ctk.CTkLabel(meta_grid, text="💬 Comment:", 
-                    font=ctk.CTkFont(size=11)).grid(row=0, column=2, padx=10, pady=5, sticky="w")
-        edit_comment_entry = ctk.CTkEntry(meta_grid, textvariable=edit_comment_var, 
-                                         placeholder_text="Optional comment", width=200)
-        edit_comment_entry.grid(row=0, column=3, padx=10, pady=5)
-        
-        # Initialize comboboxes with current data
-        try:
-            # Load CSV columns if file exists
-            if os.path.exists(channel['csv_file']):
-                columns = self.file_manager.load_csv_columns(channel['csv_file'])
-                edit_x_col_combo.set_completion_list(columns)
-                edit_y_col_combo.set_completion_list(columns)
-                edit_z_col_combo.set_completion_list(columns)
-            
-            # Load vehicle channels if available
-            if self.available_channels:
-                edit_veh_x_combo.set_completion_list(self.available_channels)
-                edit_veh_y_combo.set_completion_list(self.available_channels)
-                
-        except Exception as e:
-            self.log_status(f"⚠️ Error loading initial data for edit dialog: {str(e)}")
-        
-        # Buttons frame
-        button_frame = ctk.CTkFrame(main_frame)
-        button_frame.pack(pady=20)
-        
-        def save_changes():
-            # Validate input
-            new_channel_name = edit_channel_name_var.get().strip()
-            new_csv_file = edit_csv_file_var.get().strip()
-            new_x_col = edit_x_col_var.get().strip()
-            new_y_col = edit_y_col_var.get().strip()
-            new_z_col = edit_z_col_var.get().strip()
-            new_veh_x_channel = edit_veh_x_var.get().strip()
-            new_veh_y_channel = edit_veh_y_var.get().strip()
-            new_units = edit_units_var.get().strip()
-            new_comment = edit_comment_var.get().strip()
-            
-            # Create new config
+        # Load CSV columns if file exists
+        if os.path.exists(channel['csv_file']):
             try:
-                new_config = self.channel_manager.create_channel_config(
-                    new_channel_name, new_csv_file, new_x_col, new_y_col, new_z_col,
-                    new_veh_x_channel, new_veh_y_channel, new_units, new_comment
-                )
-                
-                # Check if channel name already exists (except for the current channel)
-                all_channels = self.channel_manager.get_all_channels()
-                for i, ch in enumerate(all_channels):
-                    if i != channel_index and ch['name'] == new_channel_name:
-                        messagebox.showerror("Error", "Channel with this name already exists!")
-                        return
-                
-                # Update the channel
-                self.channel_manager.update_channel(channel_index, new_config)
-                
-                # Update display with current filters
-                self.apply_combined_filters()
-                
-                # Auto-save settings
-                self.save_settings()
-                
-                self.log_status(f"✅ Updated channel: {channel['name']} → {new_channel_name}")
-                edit_dialog.destroy()
-                
-            except Exception as e:
-                messagebox.showerror("Error", str(e))
-                self.log_status(f"❌ Error updating channel: {str(e)}")
-            
-        def cancel_edit():
-            edit_dialog.destroy()
+                columns = self.file_manager.load_csv_columns(channel['csv_file'])
+                self.x_col_combo.set_completion_list(columns)
+                self.y_col_combo.set_completion_list(columns)
+                self.z_col_combo.set_completion_list(columns)
+            except Exception:
+                pass
         
-        save_btn = ctk.CTkButton(
-            button_frame,
-            text='✅ Save Changes',
-            command=save_changes,
-            font=ctk.CTkFont(size=12, weight="bold"),
-            width=120,
-            height=35
-        )
-        save_btn.pack(side='left', padx=5)
+        # Switch to Custom Channels tab
+        self.tabview.set("⚙️ Custom Channels")
         
-        cancel_btn = ctk.CTkButton(
-            button_frame,
-            text='❌ Cancel',
-            command=cancel_edit,
-            width=100,
-            height=35
-        )
-        cancel_btn.pack(side='left', padx=5)
+        # Delete the original and let user re-add as edited
+        self.channel_manager.delete_channel(channel_index)
+        self.update_channels_display()
         
-        self.log_status(f"✏️ Opened edit dialog for channel: {channel['name']}")
-        
+        self.log_status(f"✏️ Editing channel: {channel_name}")
+
     def delete_selected_channel(self):
         """Delete the selected channel."""
         selection = self.channels_tree.selection()
         if not selection:
             messagebox.showwarning("Warning", "Please select a channel to delete!")
             return
-            
+        
         item = selection[0]
         values = self.channels_tree.item(item)['values']
         channel_name = values[0]
         
-        # Confirm deletion
-        result = messagebox.askyesno(
-            "Confirm Delete",
-            f"Are you sure you want to delete channel '{channel_name}'?\n\nThis action cannot be undone!"
-        )
-        
-        if result:
-            try:
-                self.channel_manager.delete_channel_by_name(channel_name)
+        if messagebox.askyesno("Confirm Delete", f"Are you sure you want to delete channel '{channel_name}'?"):
+            success, error_msg = self.channel_manager.delete_channel_by_name(channel_name)
+            if success:
                 self.update_channels_display()
                 self.save_settings()
-                self.log_status(f"🗑️ Deleted channel: {channel_name}")
-                
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to delete channel: {str(e)}")
-                self.log_status(f"❌ Error deleting channel: {str(e)}")
-    
+            else:
+                messagebox.showerror("Error", error_msg)
+
     def duplicate_selected_channel(self):
         """Duplicate the selected channel."""
         selection = self.channels_tree.selection()
         if not selection:
             messagebox.showwarning("Warning", "Please select a channel to duplicate!")
             return
-            
+        
         item = selection[0]
         values = self.channels_tree.item(item)['values']
         channel_name = values[0]
         
-        # Find the channel
-        all_channels = self.channel_manager.get_all_channels()
-        channel_index = None
-        
-        for i, ch in enumerate(all_channels):
-            if ch['name'] == channel_name:
-                channel_index = i
-                break
-        
-        if channel_index is not None:
-            try:
-                self.channel_manager.duplicate_channel(channel_index)
+        channel, channel_index = self.channel_manager.find_channel_by_name(channel_name)
+        if channel is not None:
+            success, error_msg = self.channel_manager.duplicate_channel(channel_index)
+            if success:
                 self.update_channels_display()
                 self.save_settings()
-                self.log_status(f"📋 Duplicated channel: {channel_name}")
-                
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to duplicate channel: {str(e)}")
-                self.log_status(f"❌ Error duplicating channel: {str(e)}")
-    
+            else:
+                messagebox.showerror("Error", error_msg)
+
+    def clear_all_channels(self):
+        """Clear all custom channels after confirmation."""
+        channel_count = self.channel_manager.get_channel_count()
+        if channel_count == 0:
+            return
+        
+        result = messagebox.askyesno(
+            "Confirm Clear",
+            f"Are you sure you want to clear all {channel_count} custom channels?"
+        )
+        
+        if result:
+            self.channel_manager.clear_all_channels()
+            self.update_channels_display()
+            self.save_settings()
+
     def export_channel_config(self):
-        """Export channel configuration."""
+        """Export channel configuration to JSON."""
         channels = self.channel_manager.get_all_channels()
         if not channels:
-            messagebox.showinfo("Info", "No channels to export!")
+            messagebox.showwarning("Warning", "No channels to export.")
             return
         
         file_path = filedialog.asksaveasfilename(
             title="Export Channel Configuration",
             defaultextension=".json",
-            filetypes=[("JSON Files", "*.json"), ("All Files", "*.*")]
+            filetypes=[("JSON files", "*.json"), ("All files", "*.*")]
         )
         
         if file_path:
-            try:
-                self.config_manager.export_channel_config(channels, file_path)
-                self.log_status(f"📤 Exported {len(channels)} channels to: {os.path.basename(file_path)}")
-                messagebox.showinfo("Success", f"Exported {len(channels)} channels successfully!")
-                
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to export configuration: {str(e)}")
-                self.log_status(f"❌ Error exporting configuration: {str(e)}")
-    
+            success = self.config_manager.export_channel_config(channels, file_path)
+            if success:
+                messagebox.showinfo("Export Complete", f"Configuration exported successfully to:\n{os.path.basename(file_path)}")
+
     def import_channel_config(self):
-        """Import channel configuration."""
+        """Import channel configuration from JSON."""
         file_path = filedialog.askopenfilename(
-            title="Import Channel Configuration", 
-            filetypes=[("JSON Files", "*.json"), ("All Files", "*.*")]
+            title="Import Channel Configuration",
+            filetypes=[("JSON files", "*.json"), ("All files", "*.*")]
         )
         
         if file_path:
-            try:
-                imported_channels = self.config_manager.import_channel_config(file_path)
+            config = self.config_manager.import_channel_config(file_path)
+            if config is None:
+                return
+            
+            imported_channels = config['channels']
+            current_channels = self.channel_manager.get_all_channels()
+            
+            # Ask user about merge strategy
+            num_channels = len(imported_channels)
+            total_current = len(current_channels)
+            
+            if total_current > 0:
+                choice = messagebox.askyesnocancel(
+                    "Import Channels",
+                    f"Import {num_channels} channels?\n\n"
+                    f"Yes: Add to existing {total_current} channels\n"
+                    f"No: Replace all existing channels\n"
+                    f"Cancel: Don't import"
+                )
                 
-                if not imported_channels:
-                    messagebox.showinfo("Info", "No valid channels found in the file!")
+                if choice is None:  # Cancel
                     return
-                
-                # Check if there are existing channels
-                existing_channels = self.channel_manager.get_all_channels()
-                
-                if existing_channels:
-                    # Show merge options dialog
-                    self.show_import_merge_dialog(imported_channels, file_path)
-                else:
-                    # No existing channels, just add all
-                    self.channel_manager.set_all_channels(imported_channels)
-                    self.update_channels_display()
-                    self.save_settings()
-                    self.log_status(f"📥 Imported {len(imported_channels)} channels from: {os.path.basename(file_path)}")
-                    messagebox.showinfo("Success", f"Imported {len(imported_channels)} channels successfully!")
-                
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to import configuration: {str(e)}")
-                self.log_status(f"❌ Error importing configuration: {str(e)}")
-    
-    def show_import_merge_dialog(self, imported_channels, file_path):
-        """Show dialog for choosing import merge strategy."""
-        merge_dialog = ctk.CTkToplevel(self.root)
-        merge_dialog.title("Import Options")
-        merge_dialog.geometry("500x300")
-        merge_dialog.transient(self.root)
-        merge_dialog.grab_set()
-        
-        # Center dialog
-        merge_dialog.update_idletasks()
-        x = (merge_dialog.winfo_screenwidth() // 2) - 250
-        y = (merge_dialog.winfo_screenheight() // 2) - 150
-        merge_dialog.geometry(f"500x300+{x}+{y}")
-        
-        # Content
-        main_frame = ctk.CTkFrame(merge_dialog)
-        main_frame.pack(fill="both", expand=True, padx=20, pady=20)
-        
-        title_label = ctk.CTkLabel(
-            main_frame,
-            text="📥 Import Options",
-            font=ctk.CTkFont(size=18, weight="bold")
-        )
-        title_label.pack(pady=(10, 15))
-        
-        info_label = ctk.CTkLabel(
-            main_frame,
-            text=f"Found {len(imported_channels)} channels in the import file.\nHow would you like to handle existing channels?",
-            font=ctk.CTkFont(size=12),
-            justify="center"
-        )
-        info_label.pack(pady=(0, 20))
-        
-        def replace_all():
-            self.channel_manager.set_all_channels(imported_channels)
-            self.update_channels_display()
-            self.save_settings()
-            self.log_status(f"📥 Replaced all channels with {len(imported_channels)} imported channels")
-            messagebox.showinfo("Success", f"Imported {len(imported_channels)} channels successfully!")
-            merge_dialog.destroy()
-        
-        def add_to_existing():
-            existing_channels = self.channel_manager.get_all_channels()
-            merged_channels = self.config_manager.merge_channel_configs(existing_channels, imported_channels, "add")
+                elif choice:  # Yes - add
+                    mode = "add"
+                else:  # No - replace
+                    mode = "replace"
+            else:
+                mode = "add"
+            
+            # Merge configurations
+            merged_channels, conflicts = self.config_manager.merge_channel_configs(
+                current_channels, imported_channels, mode
+            )
+            
+            # Update channel manager
             self.channel_manager.set_all_channels(merged_channels)
             self.update_channels_display()
             self.save_settings()
-            added_count = len(merged_channels) - len(existing_channels)
-            self.log_status(f"📥 Added {added_count} new channels from import")
-            messagebox.showinfo("Success", f"Added {added_count} new channels successfully!")
-            merge_dialog.destroy()
-        
-        def cancel_import():
-            merge_dialog.destroy()
-        
-        # Buttons
-        button_frame = ctk.CTkFrame(main_frame)
-        button_frame.pack(pady=20)
-        
-        replace_btn = ctk.CTkButton(
-            button_frame,
-            text="🔄 Replace All",
-            command=replace_all,
-            width=120,
-            height=35
-        )
-        replace_btn.pack(side="left", padx=5)
-        
-        add_btn = ctk.CTkButton(
-            button_frame,
-            text="➕ Add to Existing",
-            command=add_to_existing,
-            width=120,
-            height=35
-        )
-        add_btn.pack(side="left", padx=5)
-        
-        cancel_btn = ctk.CTkButton(
-            button_frame,
-            text="❌ Cancel",
-            command=cancel_import,
-            width=100,
-            height=35
-        )
-        cancel_btn.pack(side="left", padx=5)
-    
-    # Processing functionality
-    def process_all_channels(self):
-        """Process all configured channels."""
-        # Validate prerequisites
-        if not self.vehicle_data:
-            messagebox.showerror("Error", "Please load a vehicle file first!")
-            return
-        
-        channels = self.channel_manager.get_all_channels()
-        if not channels:
-            messagebox.showerror("Error", "No channels configured!")
-            return
-        
-        # Validate all channels
-        validation_errors = self.channel_validator.validate_all_channels(channels, self.vehicle_data)
-        if validation_errors:
-            error_msg = "Channel validation errors:\n\n" + "\n".join(validation_errors)
-            messagebox.showerror("Validation Error", error_msg)
-            return
-        
-        # Show progress dialog
-        progress_dialog = ModernProgressDialog(
-            self.root,
-            title="Processing Channels",
-            message="Processing all configured channels..."
-        )
-        
-        def process_thread():
-            try:
-                # Analyze sampling rates
-                self.process_status_label.configure(text="Analyzing sampling rates...")
-                progress_dialog.update_status("Analyzing channel sampling rates...", 10)
-                
-                channel_analysis = self.channel_analyzer.analyze_channel_sampling_rates(
-                    self.vehicle_data, channels, self.vehicle_file_path
-                )
-                
-                # Ask for raster if needed
-                progress_dialog.close()
-                target_raster = self.ask_for_raster(channel_analysis)
-                
-                if target_raster is None:
-                    return  # User cancelled
-                
-                # Reopen progress dialog
-                progress_dialog = ModernProgressDialog(
-                    self.root,
-                    title="Processing Channels", 
-                    message="Processing channels with selected raster..."
-                )
-                
-                # Process each channel
-                calculated_signals = {}
-                total_channels = len(channels)
-                
-                for i, channel in enumerate(channels):
-                    progress = 20 + (70 * i / total_channels)
-                    progress_dialog.update_status(f"Processing channel: {channel['name']}", progress)
-                    
-                    # Load surface table
-                    surface_data = self.data_processor.load_surface_table(
-                        channel['csv_file'],
-                        channel['x_column'],
-                        channel['y_column'], 
-                        channel['z_column']
-                    )
-                    
-                    # Get vehicle channel data
-                    x_data = self.channel_analyzer.get_interpolated_signal_data(
-                        self.vehicle_data, self.vehicle_file_path, channel['vehicle_x_channel'], target_raster
-                    )
-                    y_data = self.channel_analyzer.get_interpolated_signal_data(
-                        self.vehicle_data, self.vehicle_file_path, channel['vehicle_y_channel'], target_raster
-                    )
-                    
-                    # Interpolate values
-                    z_interpolated = []
-                    for x_val, y_val in zip(x_data, y_data):
-                        z_val = self.data_processor.interpolate_z_value(
-                            x_val, y_val,
-                            surface_data['x_values'],
-                            surface_data['y_values'],
-                            surface_data['z_matrix']
-                        )
-                        z_interpolated.append(z_val)
-                    
-                    # Create calculated signal
-                    signal = self.output_generator.create_calculated_signal(
-                        channel, z_interpolated, surface_data['timestamps']
-                    )
-                    calculated_signals[channel['name']] = signal
-                
-                # Save output
-                progress_dialog.update_status("Saving output...", 95)
-                
-                original_file_ext = os.path.splitext(self.vehicle_file_path)[1]
-                self.file_manager.save_output(
-                    calculated_signals, self.vehicle_file_path, original_file_ext,
-                    vehicle_data=self.vehicle_data
-                )
-                
-                progress_dialog.update_status("Complete!", 100)
-                
-                # Success
-                self.root.after(0, lambda: [
-                    progress_dialog.close(),
-                    messagebox.showinfo("Success", f"Successfully processed {len(channels)} channels!"),
-                    self.log_status(f"✅ Successfully processed {len(channels)} channels")
-                ])
-                
-            except Exception as e:
-                self.root.after(0, lambda: [
-                    progress_dialog.close(),
-                    messagebox.showerror("Error", f"Processing failed: {str(e)}"),
-                    self.log_status(f"❌ Processing failed: {str(e)}")
-                ])
-        
-        # Start processing in background thread
-        threading.Thread(target=process_thread, daemon=True).start()
-    
-    def ask_for_raster(self, channel_analysis):
-        """Ask user for target raster using advanced dialog."""
-        dialog = AdvancedRasterDialog(self.root, channel_analysis, logger=self)
-        dialog.show()
-        
-        # Wait for dialog to complete
-        self.root.wait_window(dialog.dialog)
-        
-        # Return the selected raster
-        return getattr(dialog, 'selected_raster', None)
-    
-    # Settings management
+            
+            # Show results
+            result_msg = f"✅ Successfully imported {len(imported_channels)} channel(s)"
+            if conflicts:
+                result_msg += f"\n\nRenamed due to conflicts:\n" + "\n".join(conflicts)
+            
+            messagebox.showinfo("Import Complete", result_msg)
+
+    # Settings Management
     def save_settings(self):
-        """Save current settings."""
-        try:
-            self.settings_manager.save_settings(self)
-            self.log_status("💾 Settings saved")
-        except Exception as e:
-            self.log_status(f"❌ Error saving settings: {str(e)}")
-    
+        """Auto-save current settings."""
+        app_state = self.get_current_app_state()
+        self.settings_manager.save_settings(app_state)
+
+    def get_current_app_state(self):
+        """Get current application state for settings."""
+        return {
+            'vehicle_file_path': self.vehicle_file_path,
+            'custom_channels': self.channel_manager.get_all_channels(),
+            'output_format': self.output_format_var.get(),
+            'theme': self.theme_menu.get(),
+            'form_settings': {
+                'channel_name': self.channel_name_var.get(),
+                'csv_file': self.csv_file_var.get(),
+                'x_column': self.x_col_var.get(),
+                'y_column': self.y_col_var.get(),
+                'z_column': self.z_col_var.get(),
+                'vehicle_x_channel': self.veh_x_var.get(),
+                'vehicle_y_channel': self.veh_y_var.get(),
+                'units': self.units_var.get(),
+                'comment': self.comment_var.get(),
+                'preserve_settings': self.preserve_settings_var.get()
+            }
+        }
+
     def load_settings_on_startup(self):
-        """Load settings on application startup."""
-        try:
-            settings = self.settings_manager.load_settings_on_startup()
-            if settings:
-                self.restore_settings(settings)
-                self.log_status("📂 Settings loaded from startup")
-        except Exception as e:
-            self.log_status(f"⚠️ Could not load startup settings: {str(e)}")
-    
+        """Load settings from default file on startup."""
+        settings = self.settings_manager.load_settings_on_startup()
+        if settings:
+            self.restore_settings(settings)
+
     def save_settings_as(self):
-        """Save settings to a specific file."""
+        """Save settings to a new file."""
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        num_channels = self.channel_manager.get_channel_count()
+        vehicle_name = "NoVehicle"
+        if self.vehicle_file_path:
+            vehicle_name = Path(self.vehicle_file_path).stem
+        
+        default_name = f"settings_{vehicle_name}_{num_channels}channels_{timestamp}.json"
+        
         file_path = filedialog.asksaveasfilename(
-            title="Save Settings As",
             defaultextension=".json",
-            filetypes=[("JSON Files", "*.json"), ("All Files", "*.*")]
+            filetypes=[("JSON Files", "*.json"), ("All Files", "*.*")],
+            title="Save Settings As",
+            initialvalue=default_name
         )
         
         if file_path:
-            try:
-                self.settings_manager.save_settings_as(self, file_path)
-                self.log_status(f"💾 Settings saved as: {os.path.basename(file_path)}")
-                messagebox.showinfo("Success", "Settings saved successfully!")
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to save settings: {str(e)}")
-                self.log_status(f"❌ Error saving settings: {str(e)}")
-    
+            app_state = self.get_current_app_state()
+            success = self.settings_manager.save_settings_as(app_state, file_path)
+            if success:
+                messagebox.showinfo("Settings Saved", f"Settings saved successfully to:\n{os.path.basename(file_path)}")
+
     def load_settings_from(self):
-        """Load settings from a specific file."""
+        """Load settings from a file."""
         file_path = filedialog.askopenfilename(
-            title="Load Settings From",
-            filetypes=[("JSON Files", "*.json"), ("All Files", "*.*")]
+            filetypes=[("JSON Files", "*.json"), ("All Files", "*.*")],
+            title="Load Settings From"
         )
         
         if file_path:
-            try:
-                settings = self.settings_manager.load_settings_from(file_path)
-                if settings:
-                    self.restore_settings(settings)
-                    self.log_status(f"📂 Settings loaded from: {os.path.basename(file_path)}")
-                    messagebox.showinfo("Success", "Settings loaded successfully!")
-                else:
-                    messagebox.showwarning("Warning", "No valid settings found in file!")
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to load settings: {str(e)}")
-                self.log_status(f"❌ Error loading settings: {str(e)}")
-    
-    def quick_save_settings(self, slot):
-        """Quick save settings to a slot."""
-        try:
-            self.settings_manager.quick_save_settings(self, slot)
-            slot_name = self.settings_manager.get_slot_name(slot)
-            self.log_status(f"⚡ Quick saved to {slot_name}")
-        except Exception as e:
-            self.log_status(f"❌ Error quick saving: {str(e)}")
-    
-    def quick_load_settings(self, slot):
-        """Quick load settings from a slot."""
-        try:
-            settings = self.settings_manager.quick_load_settings(slot)
+            settings = self.settings_manager.load_settings_from(file_path)
             if settings:
-                self.restore_settings(settings)
-                slot_name = self.settings_manager.get_slot_name(slot)
-                self.log_status(f"⚡ Quick loaded from {slot_name}")
-            else:
-                slot_name = self.settings_manager.get_slot_name(slot)
-                messagebox.showinfo("Info", f"No settings saved in {slot_name}!")
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to load settings: {str(e)}")
-            self.log_status(f"❌ Error quick loading: {str(e)}")
-    
+                # Show preview
+                num_channels = len(settings.get('custom_channels', []))
+                vehicle_file = settings.get('vehicle_file', 'None')
+                description = settings.get('description', 'No description available')
+                
+                preview_msg = (f"Settings Preview:\n"
+                             f"• Custom Channels: {num_channels}\n"
+                             f"• Vehicle File: {os.path.basename(vehicle_file) if vehicle_file else 'None'}\n"
+                             f"• Description: {description}\n\n"
+                             f"Load these settings?")
+                
+                if messagebox.askyesno("Load Settings", preview_msg):
+                    self.restore_settings(settings)
+                    messagebox.showinfo("Settings Loaded", f"Settings loaded successfully!\n{num_channels} custom channels restored.")
+
+    def quick_save_settings(self, slot):
+        """Quick save settings to a numbered slot."""
+        app_state = self.get_current_app_state()
+        self.settings_manager.quick_save_settings(app_state, slot)
+
+    def quick_load_settings(self, slot):
+        """Quick load settings from a numbered slot."""
+        settings = self.settings_manager.quick_load_settings(slot)
+        if settings:
+            self.restore_settings(settings)
+
+    def update_slot_name(self, slot, event):
+        """Update slot name when entry is modified."""
+        new_name = self.slot_name_entries[slot].get()
+        self.settings_manager.update_slot_name(slot, new_name)
+
     def rename_slot_dialog(self, slot):
-        """Show dialog to rename a quick save slot."""
-        current_name = self.settings_manager.get_slot_name(slot)
+        """Open dialog to rename a slot."""
+        dialog = ctk.CTkToplevel(self.root)
+        dialog.title(f"Rename Slot {slot}")
+        dialog.geometry("300x150")
+        dialog.resizable(False, False)
+        dialog.transient(self.root)
+        dialog.grab_set()
         
-        rename_dialog = ctk.CTkToplevel(self.root)
-        rename_dialog.title(f"Rename {current_name}")
-        rename_dialog.geometry("400x200")
-        rename_dialog.transient(self.root)
-        rename_dialog.grab_set()
-        
-        # Center dialog
-        rename_dialog.update_idletasks()
-        x = (rename_dialog.winfo_screenwidth() // 2) - 200
-        y = (rename_dialog.winfo_screenheight() // 2) - 100
-        rename_dialog.geometry(f"400x200+{x}+{y}")
-        
-        # Content
-        main_frame = ctk.CTkFrame(rename_dialog)
+        # Create layout
+        main_frame = ctk.CTkFrame(dialog)
         main_frame.pack(fill="both", expand=True, padx=20, pady=20)
         
-        title_label = ctk.CTkLabel(
-            main_frame,
-            text=f"Rename {current_name}",
-            font=ctk.CTkFont(size=16, weight="bold")
-        )
-        title_label.pack(pady=(10, 15))
+        label = ctk.CTkLabel(main_frame, text=f"Enter new name for Slot {slot}:")
+        label.pack(pady=(0, 10))
         
-        new_name_var = ctk.StringVar(value=current_name)
-        name_entry = ctk.CTkEntry(
-            main_frame,
-            textvariable=new_name_var,
-            placeholder_text="Enter new name",
-            width=300
-        )
-        name_entry.pack(pady=10)
-        name_entry.focus()
+        name_var = ctk.StringVar(value=self.settings_manager.get_slot_name(slot))
+        entry = ctk.CTkEntry(main_frame, textvariable=name_var, width=200)
+        entry.pack(pady=(0, 15))
+        entry.focus()
+        entry.select_range(0, 'end')
         
         def confirm():
-            new_name = new_name_var.get().strip()
-            if new_name and new_name != current_name:
+            new_name = name_var.get().strip()
+            if new_name:
                 self.settings_manager.update_slot_name(slot, new_name)
-                if slot == 1:
-                    self.slot_1_name_var.set(new_name)
-                else:
-                    self.slot_2_name_var.set(new_name)
-                self.log_status(f"✏️ Renamed slot {slot} to: {new_name}")
-            rename_dialog.destroy()
+                self.slot_name_entries[slot].delete(0, 'end')
+                self.slot_name_entries[slot].insert(0, new_name)
+            dialog.destroy()
         
-        def cancel():
-            rename_dialog.destroy()
-        
-        # Buttons
         button_frame = ctk.CTkFrame(main_frame)
-        button_frame.pack(pady=20)
+        button_frame.pack()
         
-        confirm_btn = ctk.CTkButton(
-            button_frame,
-            text="✅ Confirm",
-            command=confirm,
-            width=100
-        )
-        confirm_btn.pack(side="left", padx=5)
+        ok_btn = ctk.CTkButton(button_frame, text="OK", command=confirm, width=60)
+        ok_btn.pack(side="left", padx=5)
         
-        cancel_btn = ctk.CTkButton(
-            button_frame,
-            text="❌ Cancel",
-            command=cancel,
-            width=100
-        )
+        cancel_btn = ctk.CTkButton(button_frame, text="Cancel", command=dialog.destroy, width=60)
         cancel_btn.pack(side="left", padx=5)
         
-        # Bind Enter key
-        name_entry.bind('<Return>', lambda e: confirm())
-    
+        entry.bind('<Return>', lambda e: confirm())
+
     def restore_settings(self, settings):
-        """Restore application settings."""
+        """Restore settings from dictionary."""
         try:
-            # Restore channels
+            # Restore custom channels
             if 'custom_channels' in settings:
                 self.channel_manager.set_all_channels(settings['custom_channels'])
                 self.update_channels_display()
             
-            # Restore vehicle file
-            if 'vehicle_file_path' in settings and settings['vehicle_file_path']:
-                self.vehicle_file_path = settings['vehicle_file_path']
-                if os.path.exists(self.vehicle_file_path):
-                    self.load_vehicle_file()
+            # Restore output format
+            if 'output_format' in settings:
+                self.output_format_var.set(settings['output_format'])
             
             # Restore theme
             if 'theme' in settings:
-                self.theme_var.set(settings['theme'])
+                self.theme_menu.set(settings['theme'])
                 self.change_theme(settings['theme'])
             
-            # Restore slot names
-            if 'slot_names' in settings:
-                slot_names = settings['slot_names']
-                if '1' in slot_names:
-                    self.slot_1_name_var.set(slot_names['1'])
-                if '2' in slot_names:
-                    self.slot_2_name_var.set(slot_names['2'])
-        
+            # Restore form settings
+            if 'form_settings' in settings:
+                form = settings['form_settings']
+                self.channel_name_var.set(form.get('channel_name', ''))
+                self.csv_file_var.set(form.get('csv_file', ''))
+                self.x_col_var.set(form.get('x_column', ''))
+                self.y_col_var.set(form.get('y_column', ''))
+                self.z_col_var.set(form.get('z_column', ''))
+                self.veh_x_var.set(form.get('vehicle_x_channel', ''))
+                self.veh_y_var.set(form.get('vehicle_y_channel', ''))
+                self.units_var.set(form.get('units', ''))
+                self.comment_var.set(form.get('comment', ''))
+                self.preserve_settings_var.set(form.get('preserve_settings', True))
+                
+                # Load CSV columns if file exists
+                csv_file = form.get('csv_file', '')
+                if csv_file and os.path.exists(csv_file):
+                    try:
+                        columns = self.file_manager.load_csv_columns(csv_file)
+                        self.x_col_combo.set_completion_list(columns)
+                        self.y_col_combo.set_completion_list(columns)
+                        self.z_col_combo.set_completion_list(columns)
+                    except Exception:
+                        pass
+            
+            # Restore vehicle file if it exists
+            if 'vehicle_file' in settings and settings['vehicle_file']:
+                if os.path.exists(settings['vehicle_file']):
+                    self.vehicle_file_path = settings['vehicle_file']
+                    filename = os.path.basename(self.vehicle_file_path)
+                    self.file_status_label.configure(text=f"📁 {filename}")
+                    try:
+                        self.vehicle_data, self.available_channels = self.file_manager.load_vehicle_file(self.vehicle_file_path)
+                        self.veh_x_combo.set_completion_list(self.available_channels)
+                        self.veh_y_combo.set_completion_list(self.available_channels)
+                    except Exception as e:
+                        self.log_status(f"⚠️ Could not reload vehicle file: {str(e)}")
+                        
         except Exception as e:
-            self.log_status(f"⚠️ Error restoring some settings: {str(e)}")
-    
-    def get_all_settings(self):
-        """Get all current settings for saving."""
-        return self.settings_manager.get_all_settings(self)
-    
-    # Status log functionality
+            self.log_status(f"❌ Error restoring settings: {str(e)}")
+
+    # Processing
+    def process_all_channels(self):
+        """Process all configured custom channels."""
+        if not self.vehicle_data:
+            messagebox.showerror("Error", "Please select a vehicle file first!")
+            return
+        
+        channels = self.channel_manager.get_all_channels()
+        if not channels:
+            messagebox.showerror("Error", "Please configure at least one custom channel!")
+            return
+        
+        # For MDF files, ask for raster once
+        file_ext = Path(self.vehicle_file_path).suffix.lower()
+        raster = None
+        if file_ext in ['.mdf', '.mf4', '.dat']:
+            raster = self.ask_for_raster()
+            if raster is None:
+                self.log_status("⚠️ Processing cancelled by user.")
+                return
+        
+        try:
+            self.log_status("🚀 Starting processing of all custom channels...")
+            
+            # Process each custom channel
+            calculated_signals = []
+            csv_export_data = None
+            
+            for i, channel_config in enumerate(channels):
+                self.log_status(f"⚙️ Processing channel {i+1}/{len(channels)}: {channel_config['name']}")
+                
+                # Load surface table
+                try:
+                    x_values, y_values, z_matrix = self.data_processor.load_surface_table(
+                        channel_config['csv_file'],
+                        channel_config['x_column'],
+                        channel_config['y_column'], 
+                        channel_config['z_column']
+                    )
+                except Exception as e:
+                    self.log_status(f"❌ Error loading surface table for {channel_config['name']}: {str(e)}")
+                    continue
+                
+                # Extract vehicle data
+                try:
+                    if file_ext == '.csv':
+                        x_data = pd.to_numeric(self.vehicle_data[channel_config['vehicle_x_channel']], errors='coerce')
+                        y_data = pd.to_numeric(self.vehicle_data[channel_config['vehicle_y_channel']], errors='coerce')
+                        timestamps = np.arange(len(x_data), dtype=np.float64) * (raster or 0.01)
+                    else:  # MDF files
+                        x_data, x_timestamps = self.channel_analyzer.get_interpolated_signal_data(
+                            self.vehicle_data, self.vehicle_file_path, channel_config['vehicle_x_channel'], raster)
+                        y_data, y_timestamps = self.channel_analyzer.get_interpolated_signal_data(
+                            self.vehicle_data, self.vehicle_file_path, channel_config['vehicle_y_channel'], raster)
+                        
+                        # Align timestamps
+                        min_length = min(len(x_data), len(y_data))
+                        x_data = x_data[:min_length]
+                        y_data = y_data[:min_length]
+                        timestamps = x_timestamps[:min_length]
+                    
+                    self.log_status(f"✅ Vehicle data extracted for {channel_config['name']}: {len(x_data)} samples")
+                except Exception as e:
+                    self.log_status(f"❌ Error extracting vehicle data for {channel_config['name']}: {str(e)}")
+                    continue
+                
+                # Interpolate values
+                try:
+                    z_interpolated = []
+                    valid_points = 0
+                    
+                    for x_val, y_val in zip(x_data, y_data):
+                        if pd.notna(x_val) and pd.notna(y_val):
+                            z_val = self.data_processor.interpolate_z_value(x_val, y_val, x_values, y_values, z_matrix)
+                            z_interpolated.append(z_val)
+                            if not np.isnan(z_val):
+                                valid_points += 1
+                        else:
+                            z_interpolated.append(np.nan)
+                    
+                    self.log_status(f"✅ Interpolated {valid_points}/{len(z_interpolated)} valid points for {channel_config['name']}")
+                    
+                    # Create signal for MDF output
+                    if self.output_format_var.get() == "mf4" and file_ext != '.csv':
+                        signal = self.output_generator.create_calculated_signal(
+                            channel_config, z_interpolated, timestamps)
+                        calculated_signals.append(signal)
+                    
+                    # Store for CSV output
+                    if file_ext == '.csv' or self.output_format_var.get() == "csv":
+                        if file_ext == '.csv':
+                            # Add to existing dataframe
+                            self.vehicle_data[channel_config['name']] = z_interpolated
+                        else:
+                            # Create CSV export data
+                            if csv_export_data is None:
+                                csv_export_data = self.output_generator.prepare_csv_export_data(
+                                    timestamps, {channel_config['name']: z_interpolated})
+                            else:
+                                csv_export_data[channel_config['name']] = z_interpolated
+                            
+                except Exception as e:
+                    self.log_status(f"❌ Error interpolating {channel_config['name']}: {str(e)}")
+                    continue
+            
+            # Save output
+            self.file_manager.save_output(
+                calculated_signals, 
+                self.vehicle_file_path, 
+                self.output_format_var.get(),
+                vehicle_data=self.vehicle_data if file_ext == '.csv' else None,
+                csv_export_data=csv_export_data
+            )
+            
+            messagebox.showinfo("Success", f"Processing completed successfully!\nCreated {len(calculated_signals)} calculated channels.")
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Processing failed: {str(e)}")
+            self.log_status(f"❌ Processing error: {str(e)}")
+
+    def ask_for_raster(self):
+        """Ask user for raster value for resampling MDF files with detailed channel analysis."""
+        self.log_status("🔍 Analyzing channel sampling rates...")
+        
+        # Analyze channels first  
+        all_channels = self.channel_manager.get_all_channels()
+        channel_analysis = self.channel_analyzer.analyze_channel_sampling_rates(
+            self.vehicle_data, all_channels, self.vehicle_file_path)
+        
+        # Create and show advanced raster dialog
+        raster_dialog = AdvancedRasterDialog(self.root, channel_analysis, self.log_status)
+        return raster_dialog.show()
+
+    # Status log management
     def clear_status_log(self):
         """Clear the status log."""
-        self.status_log.clear()
-        self.log_display.delete("0.0", "end")
-        self.log_status("🗑️ Status log cleared")
-    
-    def log_status(self, message):
-        """Add a message to the status log."""
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        log_entry = f"[{timestamp}] {message}"
-        
-        # Add to log list
-        self.status_log.append(log_entry)
-        
-        # Update display
-        self.log_display.insert("end", log_entry + "\n")
-        self.log_display.see("end")
-        
-        # Limit log size
-        if len(self.status_log) > 1000:
-            self.status_log = self.status_log[-500:]
-            # Rebuild display
-            self.log_display.delete("0.0", "end")
-            for entry in self.status_log:
-                self.log_display.insert("end", entry + "\n")
-    
+        self.status_text.delete("1.0", "end")
+        self.log_status("🧹 Status log cleared.")
+
     def on_closing(self):
-        """Handle application closing."""
-        try:
-            # Auto-save settings before closing
-            self.save_settings()
-            self.log_status("👋 Application closing - settings saved")
-        except:
-            pass
+        """Handle application closing with save options."""
+        num_channels = self.channel_manager.get_channel_count()
         
-        self.root.destroy()
+        if num_channels > 0:
+            # Ask if user wants to save
+            result = messagebox.askyesnocancel(
+                "Save Before Exit?",
+                f"You have {num_channels} custom channel(s) configured.\n\n"
+                "Save settings before exiting?\n\n"
+                "• Yes: Auto-save to default file\n"
+                "• No: Exit without saving\n"
+                "• Cancel: Stay in application"
+            )
+            
+            if result is True:  # Yes - save
+                self.save_settings()
+                self.log_status("✅ Auto-saved settings before exit")
+                self.root.destroy()
+            elif result is False:  # No - don't save
+                self.root.destroy()
+            # Cancel - do nothing (stay open)
+        else:
+            # No channels, simple exit
+            if messagebox.askokcancel("Exit", "Are you sure you want to exit?"):
+                self.root.destroy()
     
     def run(self):
         """Start the application."""
@@ -1866,9 +1544,13 @@ This will:
 
 
 def main():
-    """Main entry point."""
-    app = VehicleLogChannelAppenderModular()
-    app.run()
+    """Main function to run the application."""
+    try:
+        app = VehicleLogChannelAppenderModular()
+        app.run()
+    except Exception as e:
+        print(f"Failed to start application: {e}")
+        input("Press Enter to continue...")
 
 
 if __name__ == "__main__":
